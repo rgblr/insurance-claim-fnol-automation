@@ -124,19 +124,11 @@ function FnolPage() {
 
     const transcript = "There was a minor accident near Bellandur, Bangalore";
     setVoiceStatus(`Heard: "${transcript}"`);
-
-    // Push user voice message into chat history and continue the flow there
-    const next: Msg[] = [...messages, { role: "user", content: transcript }];
-    setMessages(next);
     setMode("chat");
-    setLoading(true);
-    const reply = await fetchReply(next);
-    setMessages([...next, { role: "assistant", content: reply }]);
-    setLoading(false);
+
+    // Reuse the exact same pipeline as chat — no duplicate flow
+    await handleVoiceTranscript(transcript);
     setVoiceState("idle");
-    if (reply.toUpperCase().includes("SUMMARY:")) {
-      await submitClaim(next, reply);
-    }
   }
 
   async function startVoice() {
