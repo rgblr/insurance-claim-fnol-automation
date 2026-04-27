@@ -22,7 +22,8 @@ export const Route = createFileRoute("/")({
   }),
 });
 
-type Msg = { role: "user" | "assistant"; content: string };
+type Source = "chat" | "voice";
+type Msg = { role: "user" | "assistant"; content: string; source?: Source };
 type Mode = "landing" | "chat" | "voice" | "submitted";
 
 function FnolPage() {
