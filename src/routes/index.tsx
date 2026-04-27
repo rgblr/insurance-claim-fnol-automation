@@ -1,26 +1,298 @@
 import { createFileRoute } from "@tanstack/react-router";
+import { useEffect, useRef, useState } from "react";
+import { motion, AnimatePresence } from "framer-motion";
+import { Mic, MicOff, Send, MessageSquare, Loader2, CheckCircle2, Car } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Card } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { toast } from "sonner";
+import { supabase } from "@/integrations/supabase/client";
 
 export const Route = createFileRoute("/")({
-  component: Index,
+  component: FnolPage,
+  head: () => ({
+    meta: [
+      { title: "Report a Motor Accident — FNOL Assistant" },
+      {
+        name: "description",
+        content:
+          "Calm, conversational First Notice of Loss portal. Report your motor accident in under 2 minutes by chat or voice.",
+      },
+    ],
+  }),
 });
 
-// IMPORTANT: Replace this placeholder. For sites with multiple pages (About, Services, Contact, etc.),
-// create separate route files (about.tsx, services.tsx, contact.tsx) — don't put all pages in this file.
-function PlaceholderIndex() {
+type Msg = { role: "user" | "assistant"; content: string };
+type Mode = "landing" | "chat" | "voice" | "submitted";
+
+function FnolPage() {
+  const [mode, setMode] = useState<Mode>("landing");
+  const [messages, setMessages] = useState<Msg[]>([]);
+  const [input, setInput] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const [referenceId, setReferenceId] = useState<string | null>(null);
+  const scrollRef = useRef<HTMLDivElement>(null);
+
+  // Voice state
+  const [voiceActive, setVoiceActive] = useState(false);
+  const [voiceStatus, setVoiceStatus] = useState<string>("Tap to start");
+  const vapiRef = useRef<any>(null);
+
+  useEffect(() => {
+    scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
+  }, [messages, loading]);
+
+  async function startChat() {
+    setMode("chat");
+    if (messages.length === 0) {
+      setLoading(true);
+      const reply = await fetchReply([]);
+      setMessages([{ role: "assistant", content: reply }]);
+      setLoading(false);
+    }
+  }
+
+  async function fetchReply(history: Msg[]): Promise<string> {
+    try {
+      const { data, error } = await supabase.functions.invoke("fnol-chat", {
+        body: { messages: history },
+      });
+      if (error) throw error;
+      return data?.reply ?? "This is a demo FNOL response";
+    } catch (e) {
+      console.error(e);
+      return "This is a demo FNOL response";
+    }
+  }
+
+  async function send() {
+    const text = input.trim();
+    if (!text || loading) return;
+    const next: Msg[] = [...messages, { role: "user", content: text }];
+    setMessages(next);
+    setInput("");
+    setLoading(true);
+    const reply = await fetchReply(next);
+    setMessages([...next, { role: "assistant", content: reply }]);
+    setLoading(false);
+
+    if (reply.toUpperCase().includes("SUMMARY:")) {
+      await submitClaim(next, reply);
+    }
+  }
+
+  async function submitClaim(history: Msg[], summary: string) {
+    setSubmitting(true);
+    try {
+      const { data } = await supabase.functions.invoke("fnol-submit", {
+        body: { transcript: history, summary, channel: mode },
+      });
+      setReferenceId(data?.referenceId ?? `FNOL-${Date.now().toString(36).toUpperCase()}`);
+      setMode("submitted");
+    } catch (e) {
+      toast.error("Submission failed, please try again.");
+      console.error(e);
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  async function startVoice() {
+    setMode("voice");
+    setVoiceStatus("Connecting…");
+    try {
+      const { data } = await supabase.functions.invoke("fnol-vapi-config");
+      if (!data?.configured) {
+        // Mock voice flow
+        setVoiceActive(true);
+        setVoiceStatus("Listening… (demo mode — Vapi keys not set)");
+        setTimeout(() => {
+          setVoiceStatus("Demo: voice flow simulated. Switch to chat to continue.");
+          setVoiceActive(false);
+        }, 3500);
+        return;
+      }
+      const { default: Vapi } = await import("@vapi-ai/web");
+      const vapi = new Vapi(data.publicKey);
+      vapiRef.current = vapi;
+      vapi.on("call-start", () => {
+        setVoiceActive(true);
+        setVoiceStatus("Listening — tell me what happened");
+      });
+      vapi.on("call-end", () => {
+        setVoiceActive(false);
+        setVoiceStatus("Call ended");
+      });
+      vapi.on("message", (m: any) => {
+        if (m.type === "transcript" && m.transcriptType === "final") {
+          setMessages((prev) => [
+            ...prev,
+            { role: m.role === "user" ? "user" : "assistant", content: m.transcript },
+          ]);
+        }
+      });
+      vapi.on("error", (e: any) => {
+        console.error(e);
+        toast.error("Voice error — try chat instead");
+        setVoiceActive(false);
+      });
+      await vapi.start(data.assistantId);
+    } catch (e) {
+      console.error(e);
+      setVoiceStatus("Voice unavailable — try chat");
+      setVoiceActive(false);
+    }
+  }
+
+  function stopVoice() {
+    try {
+      vapiRef.current?.stop();
+    } catch {}
+    setVoiceActive(false);
+    setVoiceStatus("Tap to start");
+  }
+
   return (
-    <div
-      className="flex min-h-screen items-center justify-center"
-      style={{ backgroundColor: "#fcfbf8" }}
-    >
-      <img
-        data-lovable-blank-page-placeholder="REMOVE_THIS"
-        src="https://cdn.gpteng.co/blank-app-v1.svg"
-        alt="Your app will live here!"
-      />
+    <div className="min-h-screen flex items-center justify-center px-4 py-6"
+      style={{ background: "var(--gradient-calm)" }}>
+      <Card className="w-full max-w-md overflow-hidden border-0"
+        style={{ boxShadow: "var(--shadow-soft)" }}>
+        {/* Header */}
+        <div className="px-6 py-5 text-primary-foreground"
+          style={{ background: "var(--gradient-primary)" }}>
+          <div className="flex items-center gap-3">
+            <div className="h-10 w-10 rounded-full bg-white/20 flex items-center justify-center">
+              <Car className="h-5 w-5" />
+            </div>
+            <div>
+              <h1 className="text-lg font-semibold leading-tight">🚗 Report Your Accident</h1>
+              <p className="text-xs opacity-90">We're here to help — calmly, in under 2 minutes.</p>
+            </div>
+          </div>
+        </div>
+
+        {/* Body */}
+        <div className="bg-card">
+          <AnimatePresence mode="wait">
+            {mode === "landing" && (
+              <motion.div key="landing" initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}
+                className="p-6 space-y-4">
+                <p className="text-sm text-muted-foreground">
+                  Take a breath. Choose how you'd like to report — switch anytime.
+                </p>
+                <div className="grid grid-cols-2 gap-3">
+                  <Button onClick={startChat} className="h-24 flex-col gap-2" variant="outline">
+                    <MessageSquare className="h-6 w-6 text-primary" />
+                    <span className="text-sm font-medium">Chat</span>
+                  </Button>
+                  <Button onClick={startVoice} className="h-24 flex-col gap-2 border-primary/30"
+                    variant="outline">
+                    <Mic className="h-6 w-6 text-primary" />
+                    <span className="text-sm font-medium">Voice</span>
+                  </Button>
+                </div>
+                <p className="text-[11px] text-muted-foreground text-center pt-2">
+                  Your details are encrypted and used only to process your claim.
+                </p>
+              </motion.div>
+            )}
+
+            {mode === "chat" && (
+              <motion.div key="chat" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
+                <div ref={scrollRef} className="h-[60vh] max-h-[480px] overflow-y-auto p-4 space-y-3">
+                  {messages.map((m, i) => (
+                    <motion.div key={i} initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }}
+                      className={`flex ${m.role === "user" ? "justify-end" : "justify-start"}`}>
+                      <div className={`max-w-[80%] rounded-2xl px-4 py-2.5 text-sm leading-relaxed ${
+                        m.role === "user"
+                          ? "bg-primary text-primary-foreground rounded-br-sm"
+                          : "bg-assistant-bubble text-foreground rounded-bl-sm"
+                      }`}>
+                        {m.content}
+                      </div>
+                    </motion.div>
+                  ))}
+                  {loading && (
+                    <div className="flex justify-start">
+                      <div className="bg-assistant-bubble rounded-2xl rounded-bl-sm px-4 py-3">
+                        <div className="flex gap-1">
+                          <span className="h-1.5 w-1.5 rounded-full bg-muted-foreground animate-bounce" />
+                          <span className="h-1.5 w-1.5 rounded-full bg-muted-foreground animate-bounce [animation-delay:120ms]" />
+                          <span className="h-1.5 w-1.5 rounded-full bg-muted-foreground animate-bounce [animation-delay:240ms]" />
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </div>
+                <div className="border-t p-3 flex gap-2 items-center">
+                  <Button size="icon" variant="ghost" onClick={startVoice} aria-label="Switch to voice">
+                    <Mic className="h-4 w-4 text-primary" />
+                  </Button>
+                  <Input value={input} onChange={(e) => setInput(e.target.value)}
+                    onKeyDown={(e) => e.key === "Enter" && send()}
+                    placeholder="Type your reply…" disabled={loading || submitting} />
+                  <Button size="icon" onClick={send} disabled={loading || submitting || !input.trim()}>
+                    {submitting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
+                  </Button>
+                </div>
+              </motion.div>
+            )}
+
+            {mode === "voice" && (
+              <motion.div key="voice" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+                className="p-8 flex flex-col items-center gap-6 min-h-[60vh] justify-center">
+                <motion.div animate={voiceActive ? { scale: [1, 1.08, 1] } : { scale: 1 }}
+                  transition={{ repeat: voiceActive ? Infinity : 0, duration: 1.4 }}
+                  className="relative h-32 w-32 rounded-full flex items-center justify-center"
+                  style={{ background: "var(--gradient-primary)", boxShadow: "var(--shadow-soft)" }}>
+                  {voiceActive && (
+                    <motion.div className="absolute inset-0 rounded-full border-2 border-primary/40"
+                      animate={{ scale: [1, 1.6], opacity: [0.6, 0] }}
+                      transition={{ repeat: Infinity, duration: 1.6 }} />
+                  )}
+                  <Mic className="h-12 w-12 text-primary-foreground" />
+                </motion.div>
+                <p className="text-sm text-muted-foreground text-center">{voiceStatus}</p>
+                <div className="flex gap-3">
+                  {voiceActive ? (
+                    <Button onClick={stopVoice} variant="destructive" className="gap-2">
+                      <MicOff className="h-4 w-4" /> Stop
+                    </Button>
+                  ) : (
+                    <Button onClick={startVoice} className="gap-2">
+                      <Mic className="h-4 w-4" /> Start speaking
+                    </Button>
+                  )}
+                  <Button onClick={() => setMode("chat")} variant="outline" className="gap-2">
+                    <MessageSquare className="h-4 w-4" /> Switch to chat
+                  </Button>
+                </div>
+              </motion.div>
+            )}
+
+            {mode === "submitted" && (
+              <motion.div key="done" initial={{ opacity: 0, scale: 0.96 }} animate={{ opacity: 1, scale: 1 }}
+                className="p-8 flex flex-col items-center gap-4 text-center min-h-[50vh] justify-center">
+                <CheckCircle2 className="h-16 w-16 text-primary" />
+                <h2 className="text-xl font-semibold">Claim received</h2>
+                <p className="text-sm text-muted-foreground">
+                  Your reference ID is
+                </p>
+                <div className="font-mono text-lg px-4 py-2 rounded-lg bg-assistant-bubble">
+                  {referenceId}
+                </div>
+                <p className="text-xs text-muted-foreground max-w-xs">
+                  A claims specialist will reach out shortly. Stay safe.
+                </p>
+                <Button variant="outline" onClick={() => { setMode("landing"); setMessages([]); setReferenceId(null); }}>
+                  Start a new report
+                </Button>
+              </motion.div>
+            )}
+          </AnimatePresence>
+        </div>
+      </Card>
     </div>
   );
-}
-
-function Index() {
-  return <PlaceholderIndex />;
 }
