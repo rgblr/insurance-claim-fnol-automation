@@ -74,11 +74,11 @@ function FnolPage() {
 
   // Single shared pipeline — chat AND voice transcripts both flow through here.
   // This guarantees identical Hugging Face logic, identical FNOL structuring,
-  // and no duplicate flows between channels.
-  async function handleUserMessage(text: string) {
+  // and no duplicate flows between channels. `source` is purely a UI label.
+  async function handleUserMessage(text: string, source: Source = "chat") {
     const trimmed = text.trim();
     if (!trimmed) return;
-    const next: Msg[] = [...messages, { role: "user", content: trimmed }];
+    const next: Msg[] = [...messages, { role: "user", content: trimmed, source }];
     setMessages(next);
     setLoading(true);
     const reply = await fetchReply(next);
@@ -93,12 +93,12 @@ function FnolPage() {
     if (!input.trim() || loading) return;
     const text = input;
     setInput("");
-    await handleUserMessage(text);
+    await handleUserMessage(text, "chat");
   }
 
   // Voice transcripts use the exact same pipeline as chat
   function handleVoiceTranscript(text: string) {
-    return handleUserMessage(text);
+    return handleUserMessage(text, "voice");
   }
 
   async function submitClaim(history: Msg[], summary: string) {
