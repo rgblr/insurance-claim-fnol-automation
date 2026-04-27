@@ -67,20 +67,33 @@ function FnolPage() {
     }
   }
 
-  async function send() {
-    const text = input.trim();
-    if (!text || loading) return;
-    const next: Msg[] = [...messages, { role: "user", content: text }];
+  // Single shared pipeline — chat AND voice transcripts both flow through here.
+  // This guarantees identical Hugging Face logic, identical FNOL structuring,
+  // and no duplicate flows between channels.
+  async function handleUserMessage(text: string) {
+    const trimmed = text.trim();
+    if (!trimmed) return;
+    const next: Msg[] = [...messages, { role: "user", content: trimmed }];
     setMessages(next);
-    setInput("");
     setLoading(true);
     const reply = await fetchReply(next);
     setMessages([...next, { role: "assistant", content: reply }]);
     setLoading(false);
-
     if (reply.toUpperCase().includes("SUMMARY:")) {
       await submitClaim(next, reply);
     }
+  }
+
+  async function send() {
+    if (!input.trim() || loading) return;
+    const text = input;
+    setInput("");
+    await handleUserMessage(text);
+  }
+
+  // Voice transcripts use the exact same pipeline as chat
+  function handleVoiceTranscript(text: string) {
+    return handleUserMessage(text);
   }
 
   async function submitClaim(history: Msg[], summary: string) {
@@ -111,19 +124,11 @@ function FnolPage() {
 
     const transcript = "There was a minor accident near Bellandur, Bangalore";
     setVoiceStatus(`Heard: "${transcript}"`);
-
-    // Push user voice message into chat history and continue the flow there
-    const next: Msg[] = [...messages, { role: "user", content: transcript }];
-    setMessages(next);
     setMode("chat");
-    setLoading(true);
-    const reply = await fetchReply(next);
-    setMessages([...next, { role: "assistant", content: reply }]);
-    setLoading(false);
+
+    // Reuse the exact same pipeline as chat — no duplicate flow
+    await handleVoiceTranscript(transcript);
     setVoiceState("idle");
-    if (reply.toUpperCase().includes("SUMMARY:")) {
-      await submitClaim(next, reply);
-    }
   }
 
   async function startVoice() {
@@ -151,10 +156,12 @@ function FnolPage() {
       });
       vapi.on("message", (m: any) => {
         if (m.type === "transcript" && m.transcriptType === "final") {
-          setMessages((prev) => [
-            ...prev,
-            { role: m.role === "user" ? "user" : "assistant", content: m.transcript },
-          ]);
+          if (m.role === "user") {
+            // Treat voice transcript exactly like chat input
+            handleVoiceTranscript(m.transcript);
+          } else {
+            setMessages((prev) => [...prev, { role: "assistant", content: m.transcript }]);
+          }
         }
       });
       vapi.on("error", (e: any) => {
