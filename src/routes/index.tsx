@@ -137,8 +137,8 @@ function FnolPage() {
       setReferenceId(data?.referenceId ?? `FNOL-${Date.now().toString(36).toUpperCase()}`);
       setMode("submitted");
     } catch (e) {
-      toast.error("Submission failed, please try again.");
       console.error(e);
+      setLastError({ kind: "submit", history, summary });
     } finally {
       setSubmitting(false);
     }
