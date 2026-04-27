@@ -56,23 +56,25 @@ function FnolPage() {
     setMode("chat");
     if (messages.length === 0) {
       setLoading(true);
-      const reply = await fetchReply([]);
-      setMessages([{ role: "assistant", content: reply }]);
-      setLoading(false);
+      try {
+        const reply = await fetchReply([]);
+        setMessages([{ role: "assistant", content: reply }]);
+      } catch (e) {
+        console.error(e);
+        setLastError({ kind: "init" });
+      } finally {
+        setLoading(false);
+      }
     }
   }
 
   async function fetchReply(history: Msg[]): Promise<string> {
-    try {
-      const { data, error } = await supabase.functions.invoke("fnol-chat", {
-        body: { messages: history },
-      });
-      if (error) throw error;
-      return data?.reply ?? "This is a demo FNOL response";
-    } catch (e) {
-      console.error(e);
-      return "This is a demo FNOL response";
-    }
+    const { data, error } = await supabase.functions.invoke("fnol-chat", {
+      body: { messages: history },
+    });
+    if (error) throw error;
+    if (!data?.reply) throw new Error("Empty reply");
+    return data.reply as string;
   }
 
   // Single shared pipeline — chat AND voice transcripts both flow through here.
@@ -81,14 +83,23 @@ function FnolPage() {
   async function handleUserMessage(text: string, source: Source = "chat") {
     const trimmed = text.trim();
     if (!trimmed) return;
+    setLastError(null);
     const next: Msg[] = [...messages, { role: "user", content: trimmed, source }];
     setMessages(next);
     setLoading(true);
-    const reply = await fetchReply(next);
-    setMessages([...next, { role: "assistant", content: reply }]);
-    setLoading(false);
-    if (reply.toUpperCase().includes("SUMMARY:")) {
-      await submitClaim(next, reply);
+    try {
+      const reply = await fetchReply(next);
+      setMessages([...next, { role: "assistant", content: reply }]);
+      if (reply.toUpperCase().includes("SUMMARY:")) {
+        await submitClaim(next, reply);
+      }
+    } catch (e) {
+      console.error(e);
+      // Roll back the user message so retry re-sends cleanly.
+      setMessages(messages);
+      setLastError({ kind: "chat", text: trimmed, source });
+    } finally {
+      setLoading(false);
     }
   }
 
@@ -97,6 +108,19 @@ function FnolPage() {
     const text = input;
     setInput("");
     await handleUserMessage(text, "chat");
+  }
+
+  function retryLast() {
+    if (!lastError) return;
+    const err = lastError;
+    setLastError(null);
+    if (err.kind === "chat") {
+      handleUserMessage(err.text, err.source);
+    } else if (err.kind === "init") {
+      startChat();
+    } else if (err.kind === "submit") {
+      submitClaim(err.history, err.summary);
+    }
   }
 
   // Voice transcripts use the exact same pipeline as chat
