@@ -101,10 +101,12 @@ function FnolPage() {
 
   async function mockVoiceFlow() {
     setVoiceActive(true);
+    setVoiceState("listening");
     setVoiceStatus("Listening…");
     await new Promise((r) => setTimeout(r, 2000));
     setVoiceActive(false);
-    setVoiceStatus("Transcribing…");
+    setVoiceState("processing");
+    setVoiceStatus("Processing…");
     await new Promise((r) => setTimeout(r, 800));
 
     const transcript = "There was a minor accident near Bellandur, Bangalore";
@@ -118,6 +120,7 @@ function FnolPage() {
     const reply = await fetchReply(next);
     setMessages([...next, { role: "assistant", content: reply }]);
     setLoading(false);
+    setVoiceState("idle");
     if (reply.toUpperCase().includes("SUMMARY:")) {
       await submitClaim(next, reply);
     }
