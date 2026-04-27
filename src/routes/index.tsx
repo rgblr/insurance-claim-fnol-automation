@@ -162,8 +162,10 @@ function FnolPage() {
       vapi.on("message", (m: any) => {
         if (m.type === "transcript" && m.transcriptType === "final") {
           if (m.role === "user") {
-            // Treat voice transcript exactly like chat input
-            handleVoiceTranscript(m.transcript);
+            // Stage transcript in chat for user to review/edit before
+            // it enters the shared FNOL pipeline.
+            setMode("chat");
+            setPendingTranscript(m.transcript);
           } else {
             setMessages((prev) => [...prev, { role: "assistant", content: m.transcript }]);
           }
