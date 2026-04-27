@@ -36,6 +36,7 @@ function FnolPage() {
 
   // Voice state
   const [voiceActive, setVoiceActive] = useState(false);
+  const [voiceState, setVoiceState] = useState<"idle" | "listening" | "processing">("idle");
   const [voiceStatus, setVoiceStatus] = useState<string>("Tap to start");
   const vapiRef = useRef<any>(null);
 
