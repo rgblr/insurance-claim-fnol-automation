@@ -22,7 +22,8 @@ export const Route = createFileRoute("/")({
   }),
 });
 
-type Msg = { role: "user" | "assistant"; content: string };
+type Source = "chat" | "voice";
+type Msg = { role: "user" | "assistant"; content: string; source?: Source };
 type Mode = "landing" | "chat" | "voice" | "submitted";
 
 function FnolPage() {
@@ -73,11 +74,11 @@ function FnolPage() {
 
   // Single shared pipeline — chat AND voice transcripts both flow through here.
   // This guarantees identical Hugging Face logic, identical FNOL structuring,
-  // and no duplicate flows between channels.
-  async function handleUserMessage(text: string) {
+  // and no duplicate flows between channels. `source` is purely a UI label.
+  async function handleUserMessage(text: string, source: Source = "chat") {
     const trimmed = text.trim();
     if (!trimmed) return;
-    const next: Msg[] = [...messages, { role: "user", content: trimmed }];
+    const next: Msg[] = [...messages, { role: "user", content: trimmed, source }];
     setMessages(next);
     setLoading(true);
     const reply = await fetchReply(next);
@@ -92,12 +93,12 @@ function FnolPage() {
     if (!input.trim() || loading) return;
     const text = input;
     setInput("");
-    await handleUserMessage(text);
+    await handleUserMessage(text, "chat");
   }
 
   // Voice transcripts use the exact same pipeline as chat
   function handleVoiceTranscript(text: string) {
-    return handleUserMessage(text);
+    return handleUserMessage(text, "voice");
   }
 
   async function submitClaim(history: Msg[], summary: string) {
@@ -245,7 +246,7 @@ function FnolPage() {
                 <div ref={scrollRef} className="h-[60vh] max-h-[480px] overflow-y-auto p-4 space-y-3">
                   {messages.map((m, i) => (
                     <motion.div key={i} initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }}
-                      className={`flex ${m.role === "user" ? "justify-end" : "justify-start"}`}>
+                      className={`flex flex-col gap-1 ${m.role === "user" ? "items-end" : "items-start"}`}>
                       <div className={`max-w-[80%] rounded-2xl px-4 py-2.5 text-sm leading-relaxed ${
                         m.role === "user"
                           ? "bg-primary text-primary-foreground rounded-br-sm"
@@ -253,6 +254,15 @@ function FnolPage() {
                       }`}>
                         {m.content}
                       </div>
+                      {m.role === "user" && m.source && (
+                        <span className="inline-flex items-center gap-1 text-[10px] text-muted-foreground px-1">
+                          {m.source === "voice" ? (
+                            <><Mic className="h-2.5 w-2.5" /> Voice</>
+                          ) : (
+                            <><MessageSquare className="h-2.5 w-2.5" /> Chat</>
+                          )}
+                        </span>
+                      )}
                     </motion.div>
                   ))}
                   {loading && (
@@ -281,7 +291,7 @@ function FnolPage() {
                         if (e.key === "Enter" && pendingTranscript.trim()) {
                           const t = pendingTranscript.trim();
                           setPendingTranscript(null);
-                          handleUserMessage(t);
+                          handleUserMessage(t, "voice");
                         }
                       }}
                       placeholder="Edit transcript…"
@@ -296,7 +306,7 @@ function FnolPage() {
                         onClick={() => {
                           const t = pendingTranscript.trim();
                           setPendingTranscript(null);
-                          handleUserMessage(t);
+                          handleUserMessage(t, "voice");
                         }}
                       >
                         Send
