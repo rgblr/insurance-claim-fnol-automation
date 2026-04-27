@@ -40,6 +40,10 @@ function FnolPage() {
   const [voiceStatus, setVoiceStatus] = useState<string>("Tap to start");
   const vapiRef = useRef<any>(null);
 
+  // Pending voice transcript awaiting user confirmation/edit before
+  // entering the shared FNOL pipeline.
+  const [pendingTranscript, setPendingTranscript] = useState<string | null>(null);
+
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
   }, [messages, loading]);
