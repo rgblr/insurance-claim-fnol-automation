@@ -35,6 +35,9 @@ function FnolPage() {
   const [referenceId, setReferenceId] = useState<string | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
 
+  // Last failed action — when set, a "Try again" banner is shown.
+  const [lastError, setLastError] = useState<null | { kind: "chat"; text: string; source: Source } | { kind: "init" } | { kind: "submit"; history: Msg[]; summary: string }>(null);
+
   // Voice state
   const [voiceActive, setVoiceActive] = useState(false);
   const [voiceState, setVoiceState] = useState<"idle" | "listening" | "processing">("idle");
