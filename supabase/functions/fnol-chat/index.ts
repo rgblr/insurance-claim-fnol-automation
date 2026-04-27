@@ -1,30 +1,52 @@
-// FNOL chat backend: calls Hugging Face Serverless API; falls back to demo when no token.
+// FNOL extractor backend.
+// The CONVERSATION FLOW is controlled by the client app — this function does
+// NOT drive the dialogue. It uses Hugging Face ONLY to extract structured
+// fields from a single user utterance. If the model is unavailable, we fall
+// back to lightweight heuristics so the demo always works.
+
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
-const SYSTEM_PROMPT = `You are a calm, empathetic FNOL (First Notice of Loss) assistant for a motor insurance company.
-Your job is to help a possibly stressed user report a motor accident in under 2 minutes.
-Guide them through these fields one at a time, in a warm conversational tone (1-2 short sentences max per turn):
-1. Are you safe? Anyone injured?
-2. Policy number or registered phone
-3. Date & time of accident
-4. Location (address or landmark)
-5. Brief description of what happened
-6. Vehicle damage description
-7. Other vehicle / third party involved?
-8. Photos available? (yes/no)
+type Extracted = {
+  safety?: string;
+  mobile?: string;
+  location?: string;
+  description?: string;
+  injuries?: string;
+};
 
-Once all fields are gathered, respond with a short summary starting with "SUMMARY:" and a JSON object on the next line containing the structured data.`;
+const EXTRACT_PROMPT = (input: string) =>
+  `You are an insurance FNOL assistant. Extract structured data from the text below.
 
-async function callHuggingFace(token: string, messages: Array<{ role: string; content: string }>) {
-  // Use a free conversational instruct model on HF Serverless Inference
+Return ONLY JSON in this format (omit fields you cannot determine):
+{
+ "safety": "",
+ "mobile": "",
+ "location": "",
+ "description": "",
+ "injuries": ""
+}
+
+User input: ${input}`;
+
+function tryParseJson(text: string): Extracted | null {
+  // Pull the first {...} block out of the model response.
+  const match = text.match(/\{[\s\S]*?\}/);
+  if (!match) return null;
+  try {
+    const obj = JSON.parse(match[0]);
+    if (obj && typeof obj === "object") return obj as Extracted;
+  } catch {
+    return null;
+  }
+  return null;
+}
+
+async function callHuggingFace(token: string, input: string): Promise<Extracted | null> {
   const model = "mistralai/Mistral-7B-Instruct-v0.3";
-  const prompt =
-    `<s>[INST] ${SYSTEM_PROMPT}\n\nConversation so far:\n` +
-    messages.map((m) => `${m.role.toUpperCase()}: ${m.content}`).join("\n") +
-    `\n\nRespond as the assistant with the next short message. [/INST]`;
+  const prompt = `<s>[INST] ${EXTRACT_PROMPT(input)} [/INST]`;
 
   const res = await fetch(`https://api-inference.huggingface.co/models/${model}`, {
     method: "POST",
@@ -34,7 +56,7 @@ async function callHuggingFace(token: string, messages: Array<{ role: string; co
     },
     body: JSON.stringify({
       inputs: prompt,
-      parameters: { max_new_tokens: 180, temperature: 0.5, return_full_text: false },
+      parameters: { max_new_tokens: 200, temperature: 0.1, return_full_text: false },
     }),
   });
 
@@ -43,56 +65,81 @@ async function callHuggingFace(token: string, messages: Array<{ role: string; co
     throw new Error(`HF API error ${res.status}: ${errText}`);
   }
   const data = await res.json();
-  if (Array.isArray(data) && data[0]?.generated_text) return data[0].generated_text.trim();
-  if (typeof data === "object" && data.generated_text) return data.generated_text.trim();
-  return "Got it. Could you share a bit more detail?";
+  const text = Array.isArray(data) ? data[0]?.generated_text ?? "" : data.generated_text ?? "";
+  return tryParseJson(text);
 }
 
-// Deterministic mock fallback used when HUGGINGFACE_API_TOKEN isn't configured.
-function mockReply(messages: Array<{ role: string; content: string }>) {
-  const userTurns = messages.filter((m) => m.role === "user").length;
-  const script = [
-    "Hi, I'm here to help. First — are you safe right now? Is anyone injured?",
-    "Thanks for letting me know. Could you share your policy number or registered phone?",
-    "Got it. When did the accident happen? (date and approximate time)",
-    "Where did it happen? An address, junction or landmark works.",
-    "Can you briefly describe what happened?",
-    "What damage does your vehicle have?",
-    "Was another vehicle or person involved? Any details would help.",
-    "Last one — do you have photos of the scene or damage? (yes/no)",
-    'SUMMARY: Thanks, I have everything I need. Submitting your claim now.\n{"status":"complete","note":"This is a demo FNOL response"}',
-  ];
-  return script[Math.min(userTurns, script.length - 1)];
+// Lightweight fallback so the demo still extracts something useful when HF
+// is rate-limited or the token is missing.
+function heuristicExtract(input: string, expectedField?: string): Extracted {
+  const out: Extracted = {};
+  const t = input.trim();
+  const lower = t.toLowerCase();
+
+  // Mobile (10-digit run, optional country code).
+  const mobileMatch = t.match(/(?:\+?\d{1,3}[\s-]?)?\d{10}/);
+  if (mobileMatch) out.mobile = mobileMatch[0].replace(/\D/g, "").slice(-10);
+
+  // Safety yes/no cues.
+  if (/\b(yes|safe|ok|okay|fine|theek|ठीक|सुरक्षित|haan|हाँ)\b/i.test(lower)) out.safety = "yes";
+  else if (/\b(no|not safe|hurt|injured|nahi|नहीं)\b/i.test(lower)) out.safety = "no";
+
+  // Injuries cues.
+  if (/\b(no injur|nobody hurt|no one hurt|sab theek|koi nahi)\b/i.test(lower)) out.injuries = "none";
+  else if (/\b(injur|hurt|bleed|fracture|chot|घायल)\b/i.test(lower)) out.injuries = t;
+
+  // If the app told us which field it was asking about, treat the raw text
+  // as that field when we couldn't pattern-match anything better.
+  if (expectedField === "location" && !out.location) out.location = t;
+  if (expectedField === "description" && !out.description) out.description = t;
+  if (expectedField === "safety" && !out.safety) out.safety = t;
+  if (expectedField === "injuries" && !out.injuries) out.injuries = t;
+
+  return out;
 }
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
 
   try {
-    const { messages } = await req.json();
+    const { input, expectedField } = await req.json();
+    if (typeof input !== "string" || !input.trim()) {
+      return new Response(JSON.stringify({ extracted: {}, source: "empty" }), {
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
     const token = Deno.env.get("HUGGINGFACE_API_TOKEN");
+    let extracted: Extracted = {};
+    let source: "huggingface" | "heuristic" = "heuristic";
 
-    let reply: string;
-    let source: "huggingface" | "mock" = "mock";
-
-    if (!token) {
-      reply = mockReply(messages ?? []);
-    } else {
+    if (token) {
       try {
-        reply = await callHuggingFace(token, messages ?? []);
-        source = "huggingface";
+        const hf = await callHuggingFace(token, input);
+        if (hf) {
+          extracted = hf;
+          source = "huggingface";
+        }
       } catch (e) {
-        console.error("HF call failed, falling back to mock:", e);
-        reply = mockReply(messages ?? []);
+        console.error("HF extract failed, using heuristic:", e);
       }
     }
 
-    return new Response(JSON.stringify({ reply, source }), {
+    // Always backfill with heuristics so we never return completely empty.
+    const fallback = heuristicExtract(input, expectedField);
+    extracted = { ...fallback, ...extracted };
+
+    // Strip empty strings.
+    for (const k of Object.keys(extracted) as (keyof Extracted)[]) {
+      if (!extracted[k] || !String(extracted[k]).trim()) delete extracted[k];
+    }
+
+    return new Response(JSON.stringify({ extracted, source }), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   } catch (e) {
     console.error("fnol-chat error:", e);
-    return new Response(JSON.stringify({ error: String(e) }), {
+    return new Response(JSON.stringify({ error: String(e), extracted: {} }), {
       status: 500,
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
