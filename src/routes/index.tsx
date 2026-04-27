@@ -282,7 +282,7 @@ function FnolPage() {
                         if (e.key === "Enter" && pendingTranscript.trim()) {
                           const t = pendingTranscript.trim();
                           setPendingTranscript(null);
-                          handleUserMessage(t);
+                          handleUserMessage(t, "voice");
                         }
                       }}
                       placeholder="Edit transcript…"
@@ -297,7 +297,7 @@ function FnolPage() {
                         onClick={() => {
                           const t = pendingTranscript.trim();
                           setPendingTranscript(null);
-                          handleUserMessage(t);
+                          handleUserMessage(t, "voice");
                         }}
                       >
                         Send
