@@ -98,19 +98,38 @@ function FnolPage() {
     }
   }
 
+  async function mockVoiceFlow() {
+    setVoiceActive(true);
+    setVoiceStatus("Listening…");
+    await new Promise((r) => setTimeout(r, 2000));
+    setVoiceActive(false);
+    setVoiceStatus("Transcribing…");
+    await new Promise((r) => setTimeout(r, 800));
+
+    const transcript = "There was a minor accident near Bellandur, Bangalore";
+    setVoiceStatus(`Heard: "${transcript}"`);
+
+    // Push user voice message into chat history and continue the flow there
+    const next: Msg[] = [...messages, { role: "user", content: transcript }];
+    setMessages(next);
+    setMode("chat");
+    setLoading(true);
+    const reply = await fetchReply(next);
+    setMessages([...next, { role: "assistant", content: reply }]);
+    setLoading(false);
+    if (reply.toUpperCase().includes("SUMMARY:")) {
+      await submitClaim(next, reply);
+    }
+  }
+
   async function startVoice() {
     setMode("voice");
     setVoiceStatus("Connecting…");
     try {
       const { data } = await supabase.functions.invoke("fnol-vapi-config");
       if (!data?.configured) {
-        // Mock voice flow
-        setVoiceActive(true);
-        setVoiceStatus("Listening… (demo mode — Vapi keys not set)");
-        setTimeout(() => {
-          setVoiceStatus("Demo: voice flow simulated. Switch to chat to continue.");
-          setVoiceActive(false);
-        }, 3500);
+        // Mock voice flow — simulate recording + transcription delay
+        await mockVoiceFlow();
         return;
       }
       const { default: Vapi } = await import("@vapi-ai/web");
