@@ -1,1 +1,10 @@
 project_id = "nraivhzgqzeoskvjdljq"
+
+[functions.fnol-chat]
+verify_jwt = false
+
+[functions.fnol-submit]
+verify_jwt = false
+
+[functions.fnol-vapi-config]
+verify_jwt = false
