@@ -130,8 +130,9 @@ function FnolPage() {
     setVoiceStatus(`Heard: "${transcript}"`);
     setMode("chat");
 
-    // Reuse the exact same pipeline as chat — no duplicate flow
-    await handleVoiceTranscript(transcript);
+    // Stage transcript so the user can review/edit before it enters the
+    // shared FNOL pipeline.
+    setPendingTranscript(transcript);
     setVoiceState("idle");
   }
 
