@@ -40,6 +40,10 @@ function FnolPage() {
   const [voiceStatus, setVoiceStatus] = useState<string>("Tap to start");
   const vapiRef = useRef<any>(null);
 
+  // Pending voice transcript awaiting user confirmation/edit before
+  // entering the shared FNOL pipeline.
+  const [pendingTranscript, setPendingTranscript] = useState<string | null>(null);
+
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
   }, [messages, loading]);
@@ -126,8 +130,9 @@ function FnolPage() {
     setVoiceStatus(`Heard: "${transcript}"`);
     setMode("chat");
 
-    // Reuse the exact same pipeline as chat — no duplicate flow
-    await handleVoiceTranscript(transcript);
+    // Stage transcript so the user can review/edit before it enters the
+    // shared FNOL pipeline.
+    setPendingTranscript(transcript);
     setVoiceState("idle");
   }
 
@@ -157,8 +162,10 @@ function FnolPage() {
       vapi.on("message", (m: any) => {
         if (m.type === "transcript" && m.transcriptType === "final") {
           if (m.role === "user") {
-            // Treat voice transcript exactly like chat input
-            handleVoiceTranscript(m.transcript);
+            // Stage transcript in chat for user to review/edit before
+            // it enters the shared FNOL pipeline.
+            setMode("chat");
+            setPendingTranscript(m.transcript);
           } else {
             setMessages((prev) => [...prev, { role: "assistant", content: m.transcript }]);
           }
@@ -260,14 +267,51 @@ function FnolPage() {
                     </div>
                   )}
                 </div>
+                {pendingTranscript !== null && (
+                  <div className="border-t bg-accent/40 p-3 space-y-2">
+                    <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                      <Mic className="h-3.5 w-3.5 text-primary" />
+                      Review your voice transcript before sending
+                    </div>
+                    <Input
+                      autoFocus
+                      value={pendingTranscript}
+                      onChange={(e) => setPendingTranscript(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter" && pendingTranscript.trim()) {
+                          const t = pendingTranscript.trim();
+                          setPendingTranscript(null);
+                          handleUserMessage(t);
+                        }
+                      }}
+                      placeholder="Edit transcript…"
+                    />
+                    <div className="flex gap-2 justify-end">
+                      <Button size="sm" variant="ghost" onClick={() => setPendingTranscript(null)}>
+                        Discard
+                      </Button>
+                      <Button
+                        size="sm"
+                        disabled={!pendingTranscript.trim() || loading || submitting}
+                        onClick={() => {
+                          const t = pendingTranscript.trim();
+                          setPendingTranscript(null);
+                          handleUserMessage(t);
+                        }}
+                      >
+                        Send
+                      </Button>
+                    </div>
+                  </div>
+                )}
                 <div className="border-t p-3 flex gap-2 items-center">
                   <Button size="icon" variant="ghost" onClick={startVoice} aria-label="Switch to voice">
                     <Mic className="h-4 w-4 text-primary" />
                   </Button>
                   <Input value={input} onChange={(e) => setInput(e.target.value)}
                     onKeyDown={(e) => e.key === "Enter" && send()}
-                    placeholder="Type your reply…" disabled={loading || submitting} />
-                  <Button size="icon" onClick={send} disabled={loading || submitting || !input.trim()}>
+                    placeholder="Type your reply…" disabled={loading || submitting || pendingTranscript !== null} />
+                  <Button size="icon" onClick={send} disabled={loading || submitting || !input.trim() || pendingTranscript !== null}>
                     {submitting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
                   </Button>
                 </div>
