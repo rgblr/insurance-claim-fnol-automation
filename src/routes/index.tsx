@@ -304,6 +304,21 @@ function FnolPage() {
                     </div>
                   )}
                 </div>
+                {lastError && !loading && !submitting && (
+                  <div className="border-t bg-destructive/10 p-3 flex items-center justify-between gap-3">
+                    <span className="text-xs text-destructive-foreground/90 text-destructive">
+                      Something went wrong. Try again.
+                    </span>
+                    <div className="flex gap-2">
+                      <Button size="sm" variant="ghost" onClick={() => setLastError(null)}>
+                        Dismiss
+                      </Button>
+                      <Button size="sm" onClick={retryLast}>
+                        Try again
+                      </Button>
+                    </div>
+                  </div>
+                )}
                 {pendingTranscript !== null && (
                   <div className="border-t bg-accent/40 p-3 space-y-2">
                     <div className="flex items-center gap-2 text-xs text-muted-foreground">
