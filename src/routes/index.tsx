@@ -156,10 +156,12 @@ function FnolPage() {
       });
       vapi.on("message", (m: any) => {
         if (m.type === "transcript" && m.transcriptType === "final") {
-          setMessages((prev) => [
-            ...prev,
-            { role: m.role === "user" ? "user" : "assistant", content: m.transcript },
-          ]);
+          if (m.role === "user") {
+            // Treat voice transcript exactly like chat input
+            handleVoiceTranscript(m.transcript);
+          } else {
+            setMessages((prev) => [...prev, { role: "assistant", content: m.transcript }]);
+          }
         }
       });
       vapi.on("error", (e: any) => {
