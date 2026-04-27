@@ -141,10 +141,12 @@ function FnolPage() {
       vapiRef.current = vapi;
       vapi.on("call-start", () => {
         setVoiceActive(true);
+        setVoiceState("listening");
         setVoiceStatus("Listening — tell me what happened");
       });
       vapi.on("call-end", () => {
         setVoiceActive(false);
+        setVoiceState("idle");
         setVoiceStatus("Call ended");
       });
       vapi.on("message", (m: any) => {
@@ -159,12 +161,14 @@ function FnolPage() {
         console.error(e);
         toast.error("Voice error — try chat instead");
         setVoiceActive(false);
+        setVoiceState("idle");
       });
       await vapi.start(data.assistantId);
     } catch (e) {
       console.error(e);
       setVoiceStatus("Voice unavailable — try chat");
       setVoiceActive(false);
+      setVoiceState("idle");
     }
   }
 
@@ -173,6 +177,7 @@ function FnolPage() {
       vapiRef.current?.stop();
     } catch {}
     setVoiceActive(false);
+    setVoiceState("idle");
     setVoiceStatus("Tap to start");
   }
 
