@@ -283,16 +283,23 @@ function FnolPage() {
                 </motion.div>
                 <p className="text-sm text-muted-foreground text-center">{voiceStatus}</p>
                 <div className="flex gap-3">
-                  {voiceActive ? (
+                  {voiceState === "listening" ? (
                     <Button onClick={stopVoice} variant="destructive" className="gap-2">
-                      <MicOff className="h-4 w-4" /> Stop
+                      <span className="h-2.5 w-2.5 rounded-full bg-white animate-pulse" />
+                      🔴 Listening…
+                    </Button>
+                  ) : voiceState === "processing" ? (
+                    <Button disabled className="gap-2">
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                      ⏳ Processing…
                     </Button>
                   ) : (
                     <Button onClick={startVoice} className="gap-2">
-                      <Mic className="h-4 w-4" /> Start speaking
+                      <Mic className="h-4 w-4" /> 🎙️ Speak to Report
                     </Button>
                   )}
-                  <Button onClick={() => setMode("chat")} variant="outline" className="gap-2">
+                  <Button onClick={() => setMode("chat")} variant="outline" className="gap-2"
+                    disabled={voiceState === "processing"}>
                     <MessageSquare className="h-4 w-4" /> Switch to chat
                   </Button>
                 </div>
