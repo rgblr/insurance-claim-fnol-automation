@@ -35,6 +35,9 @@ function FnolPage() {
   const [referenceId, setReferenceId] = useState<string | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
 
+  // Last failed action — when set, a "Try again" banner is shown.
+  const [lastError, setLastError] = useState<null | { kind: "chat"; text: string; source: Source } | { kind: "init" } | { kind: "submit"; history: Msg[]; summary: string }>(null);
+
   // Voice state
   const [voiceActive, setVoiceActive] = useState(false);
   const [voiceState, setVoiceState] = useState<"idle" | "listening" | "processing">("idle");
@@ -53,23 +56,25 @@ function FnolPage() {
     setMode("chat");
     if (messages.length === 0) {
       setLoading(true);
-      const reply = await fetchReply([]);
-      setMessages([{ role: "assistant", content: reply }]);
-      setLoading(false);
+      try {
+        const reply = await fetchReply([]);
+        setMessages([{ role: "assistant", content: reply }]);
+      } catch (e) {
+        console.error(e);
+        setLastError({ kind: "init" });
+      } finally {
+        setLoading(false);
+      }
     }
   }
 
   async function fetchReply(history: Msg[]): Promise<string> {
-    try {
-      const { data, error } = await supabase.functions.invoke("fnol-chat", {
-        body: { messages: history },
-      });
-      if (error) throw error;
-      return data?.reply ?? "This is a demo FNOL response";
-    } catch (e) {
-      console.error(e);
-      return "This is a demo FNOL response";
-    }
+    const { data, error } = await supabase.functions.invoke("fnol-chat", {
+      body: { messages: history },
+    });
+    if (error) throw error;
+    if (!data?.reply) throw new Error("Empty reply");
+    return data.reply as string;
   }
 
   // Single shared pipeline — chat AND voice transcripts both flow through here.
@@ -78,14 +83,23 @@ function FnolPage() {
   async function handleUserMessage(text: string, source: Source = "chat") {
     const trimmed = text.trim();
     if (!trimmed) return;
+    setLastError(null);
     const next: Msg[] = [...messages, { role: "user", content: trimmed, source }];
     setMessages(next);
     setLoading(true);
-    const reply = await fetchReply(next);
-    setMessages([...next, { role: "assistant", content: reply }]);
-    setLoading(false);
-    if (reply.toUpperCase().includes("SUMMARY:")) {
-      await submitClaim(next, reply);
+    try {
+      const reply = await fetchReply(next);
+      setMessages([...next, { role: "assistant", content: reply }]);
+      if (reply.toUpperCase().includes("SUMMARY:")) {
+        await submitClaim(next, reply);
+      }
+    } catch (e) {
+      console.error(e);
+      // Roll back the user message so retry re-sends cleanly.
+      setMessages(messages);
+      setLastError({ kind: "chat", text: trimmed, source });
+    } finally {
+      setLoading(false);
     }
   }
 
@@ -94,6 +108,19 @@ function FnolPage() {
     const text = input;
     setInput("");
     await handleUserMessage(text, "chat");
+  }
+
+  function retryLast() {
+    if (!lastError) return;
+    const err = lastError;
+    setLastError(null);
+    if (err.kind === "chat") {
+      handleUserMessage(err.text, err.source);
+    } else if (err.kind === "init") {
+      startChat();
+    } else if (err.kind === "submit") {
+      submitClaim(err.history, err.summary);
+    }
   }
 
   // Voice transcripts use the exact same pipeline as chat
@@ -110,8 +137,8 @@ function FnolPage() {
       setReferenceId(data?.referenceId ?? `FNOL-${Date.now().toString(36).toUpperCase()}`);
       setMode("submitted");
     } catch (e) {
-      toast.error("Submission failed, please try again.");
       console.error(e);
+      setLastError({ kind: "submit", history, summary });
     } finally {
       setSubmitting(false);
     }
@@ -277,6 +304,21 @@ function FnolPage() {
                     </div>
                   )}
                 </div>
+                {lastError && !loading && !submitting && (
+                  <div className="border-t bg-destructive/10 p-3 flex items-center justify-between gap-3">
+                    <span className="text-xs text-destructive-foreground/90 text-destructive">
+                      Something went wrong. Try again.
+                    </span>
+                    <div className="flex gap-2">
+                      <Button size="sm" variant="ghost" onClick={() => setLastError(null)}>
+                        Dismiss
+                      </Button>
+                      <Button size="sm" onClick={retryLast}>
+                        Try again
+                      </Button>
+                    </div>
+                  </div>
+                )}
                 {pendingTranscript !== null && (
                   <div className="border-t bg-accent/40 p-3 space-y-2">
                     <div className="flex items-center gap-2 text-xs text-muted-foreground">
