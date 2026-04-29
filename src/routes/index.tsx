@@ -80,14 +80,14 @@ function FnolPage() {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
   }, [messages, loading, showSummary]);
 
-  // Resolve the next step: prefer the first missing REQUIRED field, then fall
-  // back to the first missing optional field, otherwise we're done.
-  function nextStepIndex(data: FnolData): number {
-    const requiredStep = STEPS.find((step) => step.required && !data[step.key]?.trim());
-    if (requiredStep) return STEPS.indexOf(requiredStep);
-
-    const optionalStep = STEPS.find((step) => !step.required && !data[step.key]?.trim());
-    return optionalStep ? STEPS.indexOf(optionalStep) : STEPS.length;
+  // Derive the next step entirely from data — no separate currentStep state.
+  // Prefer the first missing REQUIRED field, then fall back to the first missing optional field.
+  function getNextStep(data: FnolData) {
+    return (
+      STEPS.find((step) => step.required && !data[step.key]?.trim()) ??
+      STEPS.find((step) => !step.required && !data[step.key]?.trim()) ??
+      null
+    );
   }
 
   function allRequiredFilled(data: FnolData) {
