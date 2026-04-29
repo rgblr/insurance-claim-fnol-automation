@@ -130,7 +130,18 @@ function FnolPage() {
     setLoading(true);
     try {
       // 1. Extraction-first — ask HF what structured fields are present in the input.
-      const extracted = await extract(text, step.key);
+      const extractedRaw = await extract(text, step.key);
+
+      // Whitelist: only accept the three extractable fields.
+      const allowedKeys: FieldKey[] = ["location", "description", "injuries"];
+      const extracted: Partial<FnolData> = {};
+      if (extractedRaw) {
+        (Object.keys(extractedRaw) as FieldKey[]).forEach((key) => {
+          if (allowedKeys.includes(key)) {
+            extracted[key] = extractedRaw[key];
+          }
+        });
+      }
 
       console.log("INPUT:", text);
       console.log("EXTRACTED:", JSON.stringify(extracted, null, 2));
@@ -138,16 +149,6 @@ function FnolPage() {
 
       // 2. Merge extracted fields into fnolData FIRST (only fill empty slots — never overwrite).
       const merged: FnolData = { ...fnolData };
-
-      // Explicit mapping for the high-value fields…
-      if (extracted?.location && !merged.location?.trim()) {
-        merged.location = String(extracted.location).trim();
-      }
-      if (extracted?.injuries && !merged.injuries?.trim()) {
-        merged.injuries = String(extracted.injuries).trim();
-      }
-
-      // …plus a generic pass for any other fields the extractor returned (mobile, description, safety).
       (Object.keys(extracted) as FieldKey[]).forEach((k) => {
         const val = extracted[k];
         if (val && String(val).trim() && !merged[k]?.trim()) {
