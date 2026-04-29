@@ -55,7 +55,6 @@ function FnolPage() {
   const [mode, setMode] = useState<"chat" | "voice">("chat");
   const [messages, setMessages] = useState<Msg[]>([]);
   const [fnolData, setFnolData] = useState<FnolData>(EMPTY_DATA);
-  const [currentStep, setCurrentStep] = useState(0);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
