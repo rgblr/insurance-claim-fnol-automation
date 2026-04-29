@@ -134,6 +134,16 @@ function FnolPage() {
 
       // 2. Merge extracted fields into fnolData FIRST (only fill empty slots — never overwrite).
       const merged: FnolData = { ...fnolData };
+
+      // Explicit mapping for the high-value fields…
+      if (extracted?.location && !merged.location?.trim()) {
+        merged.location = String(extracted.location).trim();
+      }
+      if (extracted?.injuries && !merged.injuries?.trim()) {
+        merged.injuries = String(extracted.injuries).trim();
+      }
+
+      // …plus a generic pass for any other fields the extractor returned (mobile, description, safety).
       (Object.keys(extracted) as FieldKey[]).forEach((k) => {
         const val = extracted[k];
         if (val && String(val).trim() && !merged[k]?.trim()) {
