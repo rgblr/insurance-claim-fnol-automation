@@ -127,30 +127,35 @@ function FnolPage() {
 
     setLoading(true);
     try {
-      // 1. Store raw input for the current field as a baseline.
-      const baseline: FnolData = { ...fnolData, [step.key]: text };
-
-      // 2. Ask HF to extract any structured fields it can find.
+      // 1. Extraction-first — ask HF what structured fields are present in the input.
       const extracted = await extract(text, step.key);
 
-      // 3. Merge — extractor can fill multiple fields at once.
-      const merged: FnolData = { ...baseline };
+      // 2. Merge extracted fields into fnolData FIRST (only fill empty slots — never overwrite).
+      const merged: FnolData = { ...fnolData };
       (Object.keys(extracted) as FieldKey[]).forEach((k) => {
         const val = extracted[k];
-        if (val && String(val).trim()) merged[k] = String(val).trim();
+        if (val && String(val).trim() && !merged[k]?.trim()) {
+          merged[k] = String(val).trim();
+        }
       });
+
+      // 3. Only assign raw input to the current step IF it's still empty after extraction.
+      //    This prevents 'safety' from swallowing a full description sentence, etc.
+      if (!merged[step.key]?.trim()) {
+        merged[step.key] = text;
+      }
 
       // Normalise mobile to 10 digits.
       if (merged.mobile) merged.mobile = merged.mobile.replace(/\D/g, "").slice(-10);
 
       setFnolData(merged);
 
-      // 4. Auto-skip already-filled steps; jump to next missing.
-      const nextIdx = nextStepIndex(merged, currentStep + 1);
+      // 4. Dynamically determine the next missing step from the start — do not increment blindly.
+      const nextIdx = nextStepIndex(merged, 0);
       setCurrentStep(nextIdx);
 
       // 5. Ask the next question, or show summary if done.
-      if (nextIdx >= STEPS.length || allRequiredFilled(merged) && nextIdx >= STEPS.length) {
+      if (nextIdx >= STEPS.length) {
         setMessages((m) => [
           ...m,
           { role: "assistant", content: "Thanks — I have everything I need. Here's a quick summary." },
