@@ -132,6 +132,10 @@ function FnolPage() {
       // 1. Extraction-first — ask HF what structured fields are present in the input.
       const extracted = await extract(text, step.key);
 
+      console.log("INPUT:", text);
+      console.log("EXTRACTED:", extracted);
+      console.log("BEFORE fnolData:", fnolData);
+
       // 2. Merge extracted fields into fnolData FIRST (only fill empty slots — never overwrite).
       const merged: FnolData = { ...fnolData };
 
@@ -166,6 +170,8 @@ function FnolPage() {
 
       // Normalise mobile to 10 digits.
       if (merged.mobile) merged.mobile = merged.mobile.replace(/\D/g, "").slice(-10);
+
+      console.log("AFTER fnolData:", merged);
 
       setFnolData(merged);
 
