@@ -189,19 +189,18 @@ function FnolPage() {
 
       setFnolData(merged);
 
-      // 4. Dynamically determine the next missing step from the start — do not increment blindly.
-      const nextIdx = nextStepIndex(merged);
-      setCurrentStep(nextIdx);
+      // 4. Decide what to ask next directly from `merged` — never trust stale state.
+      const nextStep = getNextStep(merged);
 
       // 5. Ask the next question, or show summary if done.
-      if (nextIdx >= STEPS.length) {
+      if (nextStep) {
+        setMessages((m) => [...m, { role: "assistant", content: nextStep.question }]);
+      } else {
         setMessages((m) => [
           ...m,
           { role: "assistant", content: "Thanks — I have everything I need. Here's a quick summary." },
         ]);
         setShowSummary(true);
-      } else {
-        setMessages((m) => [...m, { role: "assistant", content: STEPS[nextIdx].question }]);
       }
     } catch (e) {
       console.error(e);
