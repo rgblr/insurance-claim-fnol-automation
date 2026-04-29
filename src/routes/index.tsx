@@ -55,7 +55,6 @@ function FnolPage() {
   const [mode, setMode] = useState<"chat" | "voice">("chat");
   const [messages, setMessages] = useState<Msg[]>([]);
   const [fnolData, setFnolData] = useState<FnolData>(EMPTY_DATA);
-  const [currentStep, setCurrentStep] = useState(0);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
@@ -81,14 +80,14 @@ function FnolPage() {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
   }, [messages, loading, showSummary]);
 
-  // Resolve the next step: prefer the first missing REQUIRED field, then fall
-  // back to the first missing optional field, otherwise we're done.
-  function nextStepIndex(data: FnolData): number {
-    const requiredStep = STEPS.find((step) => step.required && !data[step.key]?.trim());
-    if (requiredStep) return STEPS.indexOf(requiredStep);
-
-    const optionalStep = STEPS.find((step) => !step.required && !data[step.key]?.trim());
-    return optionalStep ? STEPS.indexOf(optionalStep) : STEPS.length;
+  // Derive the next step entirely from data — no separate currentStep state.
+  // Prefer the first missing REQUIRED field, then fall back to the first missing optional field.
+  function getNextStep(data: FnolData) {
+    return (
+      STEPS.find((step) => step.required && !data[step.key]?.trim()) ??
+      STEPS.find((step) => !step.required && !data[step.key]?.trim()) ??
+      null
+    );
   }
 
   function allRequiredFilled(data: FnolData) {
@@ -109,7 +108,7 @@ function FnolPage() {
     if (!text || loading || submitting) return;
     setLastError(null);
 
-    const step = STEPS[currentStep];
+    const step = getNextStep(fnolData);
     if (!step) return;
 
     // Echo user message in transcript.
@@ -190,19 +189,18 @@ function FnolPage() {
 
       setFnolData(merged);
 
-      // 4. Dynamically determine the next missing step from the start — do not increment blindly.
-      const nextIdx = nextStepIndex(merged);
-      setCurrentStep(nextIdx);
+      // 4. Decide what to ask next directly from `merged` — never trust stale state.
+      const nextStep = getNextStep(merged);
 
       // 5. Ask the next question, or show summary if done.
-      if (nextIdx >= STEPS.length) {
+      if (nextStep) {
+        setMessages((m) => [...m, { role: "assistant", content: nextStep.question }]);
+      } else {
         setMessages((m) => [
           ...m,
           { role: "assistant", content: "Thanks — I have everything I need. Here's a quick summary." },
         ]);
         setShowSummary(true);
-      } else {
-        setMessages((m) => [...m, { role: "assistant", content: STEPS[nextIdx].question }]);
       }
     } catch (e) {
       console.error(e);
@@ -240,7 +238,7 @@ function FnolPage() {
         await new Promise((r) => setTimeout(r, 1400));
         setVoiceActive(false);
         const transcript =
-          STEPS[currentStep]?.key === "mobile"
+          getNextStep(fnolData)?.key === "mobile"
             ? "9876543210"
             : "There was a minor accident near Bellandur, Bangalore. No injuries.";
         setPendingTranscript(transcript);
@@ -306,7 +304,6 @@ function FnolPage() {
   function startOver() {
     setMessages([{ role: "assistant", content: STEPS[0].question }]);
     setFnolData(EMPTY_DATA);
-    setCurrentStep(0);
     setShowSummary(false);
     setSubmitted(null);
     setInput("");
@@ -525,7 +522,7 @@ function FnolPage() {
                       value={input}
                       onChange={(e) => setInput(e.target.value)}
                       onKeyDown={(e) => e.key === "Enter" && send()}
-                      placeholder={STEPS[currentStep]?.question ?? "Type your reply…"}
+                      placeholder={getNextStep(fnolData)?.question ?? "Type your reply…"}
                       disabled={loading || pendingTranscript !== null}
                     />
                     <Button
