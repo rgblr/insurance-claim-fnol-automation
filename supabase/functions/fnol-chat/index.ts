@@ -87,24 +87,17 @@ function heuristicExtract(input: string, expectedField?: string): Extracted {
   const t = input.trim();
   const lower = t.toLowerCase();
 
-  // Mobile (10-digit run, optional country code).
-  const mobileMatch = t.match(/(?:\+?\d{1,3}[\s-]?)?\d{10}/);
-  if (mobileMatch) out.mobile = mobileMatch[0].replace(/\D/g, "").slice(-10);
-
-  // Safety yes/no cues.
-  if (/\b(yes|safe|ok|okay|fine|theek|ठीक|सुरक्षित|haan|हाँ)\b/i.test(lower)) out.safety = "yes";
-  else if (/\b(no|not safe|hurt|injured|nahi|नहीं)\b/i.test(lower)) out.safety = "no";
-
-  // Injuries cues.
-  if (/\b(no injur|nobody hurt|no one hurt|sab theek|koi nahi)\b/i.test(lower)) out.injuries = "none";
-  else if (/\b(injur|hurt|bleed|fracture|chot|घायल)\b/i.test(lower)) out.injuries = t;
+  // Injuries → Yes / No.
+  if (/\b(no injur|no one (?:was )?(?:hurt|injured)|nobody (?:was )?hurt|sab theek|koi nahi)\b/i.test(lower)) {
+    out.injuries = "No";
+  } else if (/\b(injur|hurt|bleed|fracture|chot|घायल)\b/i.test(lower)) {
+    out.injuries = "Yes";
+  }
 
   // If the app told us which field it was asking about, treat the raw text
   // as that field when we couldn't pattern-match anything better.
   if (expectedField === "location" && !out.location) out.location = t;
   if (expectedField === "description" && !out.description) out.description = t;
-  if (expectedField === "safety" && !out.safety) out.safety = t;
-  if (expectedField === "injuries" && !out.injuries) out.injuries = t;
 
   return out;
 }
