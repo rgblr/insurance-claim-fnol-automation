@@ -10,26 +10,37 @@ const corsHeaders = {
 };
 
 type Extracted = {
-  safety?: string;
-  mobile?: string;
   location?: string;
   description?: string;
   injuries?: string;
 };
 
-const EXTRACT_PROMPT = (input: string) =>
-  `You are an insurance FNOL assistant. Extract structured data from the text below.
+const ALLOWED_FIELDS = ["location", "description", "injuries"] as const;
 
-Return ONLY JSON in this format (omit fields you cannot determine):
+const EXTRACT_PROMPT = (input: string) =>
+  `Extract structured data from the user input.
+
+Return ONLY valid JSON. Do not include any extra fields.
+
+Allowed fields ONLY:
+- location
+- description
+- injuries
+
+Schema:
 {
- "safety": "",
- "mobile": "",
- "location": "",
- "description": "",
- "injuries": ""
+  "location": "",
+  "description": "",
+  "injuries": ""
 }
 
-User input: ${input}`;
+Rules:
+- Do NOT include any field not listed above
+- "location" = place of accident
+- "injuries" = "Yes" or "No"
+- If a field is not mentioned, leave it empty
+
+User input: "${input}"`;
 
 function tryParseJson(text: string): Extracted | null {
   // Pull the first {...} block out of the model response.
