@@ -108,7 +108,7 @@ function FnolPage() {
     if (!text || loading || submitting) return;
     setLastError(null);
 
-    const step = STEPS[currentStep];
+    const step = getNextStep(fnolData);
     if (!step) return;
 
     // Echo user message in transcript.
