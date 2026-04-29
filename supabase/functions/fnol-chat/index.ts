@@ -133,6 +133,20 @@ Deno.serve(async (req) => {
     const fallback = heuristicExtract(input, expectedField);
     extracted = { ...fallback, ...extracted };
 
+    // Whitelist: drop anything not in ALLOWED_FIELDS.
+    for (const k of Object.keys(extracted) as (keyof Extracted)[]) {
+      if (!ALLOWED_FIELDS.includes(k as typeof ALLOWED_FIELDS[number])) {
+        delete extracted[k];
+      }
+    }
+
+    // Normalise injuries to "Yes" / "No".
+    if (extracted.injuries) {
+      const v = String(extracted.injuries).trim().toLowerCase();
+      if (/^(no|none|nil|nobody|no one)\b/.test(v) || /\bno injur/.test(v)) extracted.injuries = "No";
+      else if (/^(yes|y)\b/.test(v) || /\b(injur|hurt|bleed|fracture|chot|घायल)\b/.test(v)) extracted.injuries = "Yes";
+    }
+
     // Strip empty strings.
     for (const k of Object.keys(extracted) as (keyof Extracted)[]) {
       if (!extracted[k] || !String(extracted[k]).trim()) delete extracted[k];
