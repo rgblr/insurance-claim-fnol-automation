@@ -10,26 +10,37 @@ const corsHeaders = {
 };
 
 type Extracted = {
-  safety?: string;
-  mobile?: string;
   location?: string;
   description?: string;
   injuries?: string;
 };
 
-const EXTRACT_PROMPT = (input: string) =>
-  `You are an insurance FNOL assistant. Extract structured data from the text below.
+const ALLOWED_FIELDS = ["location", "description", "injuries"] as const;
 
-Return ONLY JSON in this format (omit fields you cannot determine):
+const EXTRACT_PROMPT = (input: string) =>
+  `Extract structured data from the user input.
+
+Return ONLY valid JSON. Do not include any extra fields.
+
+Allowed fields ONLY:
+- location
+- description
+- injuries
+
+Schema:
 {
- "safety": "",
- "mobile": "",
- "location": "",
- "description": "",
- "injuries": ""
+  "location": "",
+  "description": "",
+  "injuries": ""
 }
 
-User input: ${input}`;
+Rules:
+- Do NOT include any field not listed above
+- "location" = place of accident
+- "injuries" = "Yes" or "No"
+- If a field is not mentioned, leave it empty
+
+User input: "${input}"`;
 
 function tryParseJson(text: string): Extracted | null {
   // Pull the first {...} block out of the model response.
@@ -76,24 +87,17 @@ function heuristicExtract(input: string, expectedField?: string): Extracted {
   const t = input.trim();
   const lower = t.toLowerCase();
 
-  // Mobile (10-digit run, optional country code).
-  const mobileMatch = t.match(/(?:\+?\d{1,3}[\s-]?)?\d{10}/);
-  if (mobileMatch) out.mobile = mobileMatch[0].replace(/\D/g, "").slice(-10);
-
-  // Safety yes/no cues.
-  if (/\b(yes|safe|ok|okay|fine|theek|ठीक|सुरक्षित|haan|हाँ)\b/i.test(lower)) out.safety = "yes";
-  else if (/\b(no|not safe|hurt|injured|nahi|नहीं)\b/i.test(lower)) out.safety = "no";
-
-  // Injuries cues.
-  if (/\b(no injur|nobody hurt|no one hurt|sab theek|koi nahi)\b/i.test(lower)) out.injuries = "none";
-  else if (/\b(injur|hurt|bleed|fracture|chot|घायल)\b/i.test(lower)) out.injuries = t;
+  // Injuries → Yes / No.
+  if (/\b(no injur|no one (?:was )?(?:hurt|injured)|nobody (?:was )?hurt|sab theek|koi nahi)\b/i.test(lower)) {
+    out.injuries = "No";
+  } else if (/\b(injur|hurt|bleed|fracture|chot|घायल)\b/i.test(lower)) {
+    out.injuries = "Yes";
+  }
 
   // If the app told us which field it was asking about, treat the raw text
   // as that field when we couldn't pattern-match anything better.
   if (expectedField === "location" && !out.location) out.location = t;
   if (expectedField === "description" && !out.description) out.description = t;
-  if (expectedField === "safety" && !out.safety) out.safety = t;
-  if (expectedField === "injuries" && !out.injuries) out.injuries = t;
 
   return out;
 }
@@ -128,6 +132,20 @@ Deno.serve(async (req) => {
     // Always backfill with heuristics so we never return completely empty.
     const fallback = heuristicExtract(input, expectedField);
     extracted = { ...fallback, ...extracted };
+
+    // Whitelist: drop anything not in ALLOWED_FIELDS.
+    for (const k of Object.keys(extracted) as (keyof Extracted)[]) {
+      if (!ALLOWED_FIELDS.includes(k as typeof ALLOWED_FIELDS[number])) {
+        delete extracted[k];
+      }
+    }
+
+    // Normalise injuries to "Yes" / "No".
+    if (extracted.injuries) {
+      const v = String(extracted.injuries).trim().toLowerCase();
+      if (/^(no|none|nil|nobody|no one)\b/.test(v) || /\bno injur/.test(v)) extracted.injuries = "No";
+      else if (/^(yes|y)\b/.test(v) || /\b(injur|hurt|bleed|fracture|chot|घायल)\b/.test(v)) extracted.injuries = "Yes";
+    }
 
     // Strip empty strings.
     for (const k of Object.keys(extracted) as (keyof Extracted)[]) {
