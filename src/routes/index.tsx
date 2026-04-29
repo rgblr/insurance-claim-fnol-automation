@@ -133,8 +133,8 @@ function FnolPage() {
       const extracted = await extract(text, step.key);
 
       console.log("INPUT:", text);
-      console.log("EXTRACTED:", extracted);
-      console.log("BEFORE fnolData:", fnolData);
+      console.log("EXTRACTED:", JSON.stringify(extracted, null, 2));
+      console.log("BEFORE fnolData:", JSON.stringify(fnolData, null, 2));
 
       // 2. Merge extracted fields into fnolData FIRST (only fill empty slots — never overwrite).
       const merged: FnolData = { ...fnolData };
@@ -171,7 +171,7 @@ function FnolPage() {
       // Normalise mobile to 10 digits.
       if (merged.mobile) merged.mobile = merged.mobile.replace(/\D/g, "").slice(-10);
 
-      console.log("AFTER fnolData:", merged);
+      console.log("AFTER fnolData:", JSON.stringify(merged, null, 2));
 
       setFnolData(merged);
 
