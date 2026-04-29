@@ -238,7 +238,7 @@ function FnolPage() {
         await new Promise((r) => setTimeout(r, 1400));
         setVoiceActive(false);
         const transcript =
-          STEPS[currentStep]?.key === "mobile"
+          getNextStep(fnolData)?.key === "mobile"
             ? "9876543210"
             : "There was a minor accident near Bellandur, Bangalore. No injuries.";
         setPendingTranscript(transcript);
