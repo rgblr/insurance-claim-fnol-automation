@@ -156,6 +156,20 @@ function FnolPage() {
         }
       });
 
+      // 2b. Regex safety net — catch obvious cues the extractor might miss.
+      if (!merged.location) {
+        const match = text.match(/near ([a-zA-Z\s]+)/i);
+        if (match) merged.location = match[1].trim();
+      }
+      if (!merged.injuries) {
+        const lower = text.toLowerCase();
+        if (lower.includes("no injuries") || lower.includes("no injury")) {
+          merged.injuries = "No";
+        } else if (lower.includes("injury") || lower.includes("injuries")) {
+          merged.injuries = "Yes";
+        }
+      }
+
       // 3. Only assign raw input to the current step IF it's still empty after extraction.
       //    Guard 'safety' so it only accepts a yes/no answer — never a full sentence.
       if (!merged[step.key]?.trim()) {
