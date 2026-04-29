@@ -142,9 +142,16 @@ function FnolPage() {
       });
 
       // 3. Only assign raw input to the current step IF it's still empty after extraction.
-      //    This prevents 'safety' from swallowing a full description sentence, etc.
+      //    Guard 'safety' so it only accepts a yes/no answer — never a full sentence.
       if (!merged[step.key]?.trim()) {
-        merged[step.key] = text;
+        if (step.key === "safety") {
+          if (/^(yes|no)$/i.test(text.trim())) {
+            merged.safety = text.trim();
+          }
+          // else: leave safety empty, extraction may fill it later
+        } else {
+          merged[step.key] = text;
+        }
       }
 
       // Normalise mobile to 10 digits.
