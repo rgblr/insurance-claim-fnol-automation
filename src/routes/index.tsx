@@ -304,7 +304,6 @@ function FnolPage() {
   function startOver() {
     setMessages([{ role: "assistant", content: STEPS[0].question }]);
     setFnolData(EMPTY_DATA);
-    setCurrentStep(0);
     setShowSummary(false);
     setSubmitted(null);
     setInput("");
@@ -523,7 +522,7 @@ function FnolPage() {
                       value={input}
                       onChange={(e) => setInput(e.target.value)}
                       onKeyDown={(e) => e.key === "Enter" && send()}
-                      placeholder={STEPS[currentStep]?.question ?? "Type your reply…"}
+                      placeholder={getNextStep(fnolData)?.question ?? "Type your reply…"}
                       disabled={loading || pendingTranscript !== null}
                     />
                     <Button
