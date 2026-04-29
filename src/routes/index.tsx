@@ -171,7 +171,7 @@ function FnolPage() {
       // Normalise mobile to 10 digits.
       if (merged.mobile) merged.mobile = merged.mobile.replace(/\D/g, "").slice(-10);
 
-      console.log("AFTER fnolData:", merged);
+      console.log("AFTER fnolData:", JSON.stringify(merged, null, 2));
 
       setFnolData(merged);
 
