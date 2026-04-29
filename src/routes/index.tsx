@@ -153,7 +153,7 @@ function FnolPage() {
       setFnolData(merged);
 
       // 4. Dynamically determine the next missing step from the start — do not increment blindly.
-      const nextIdx = nextStepIndex(merged, 0);
+      const nextIdx = nextStepIndex(merged);
       setCurrentStep(nextIdx);
 
       // 5. Ask the next question, or show summary if done.
