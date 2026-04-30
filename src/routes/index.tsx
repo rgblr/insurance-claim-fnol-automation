@@ -94,11 +94,12 @@ function FnolPage() {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
   }, [messages, loading, showSummary]);
 
-  // Single source of truth — the current step is the first incomplete step
-  // in STEPS order. Optional steps that have been skipped are marked with
-  // the sentinel "—" so they are no longer treated as the active step.
+  // Single source of truth — progression is driven by REQUIRED fields only.
+  // Safety is optional metadata and must never block the flow. Optional
+  // injuries is also non-blocking; we only surface it after all required
+  // fields are filled (so summary is reached cleanly without it).
   function getNextStep(data: FnolData) {
-    return STEPS.find((step) => !data[step.key]?.trim()) ?? null;
+    return STEPS.find((step) => step.required && !data[step.key]?.trim()) ?? null;
   }
 
   function allRequiredFilled(data: FnolData) {
