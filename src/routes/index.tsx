@@ -168,37 +168,48 @@ function FnolPage() {
         }
       }
 
-      // Determine if extraction/regex consumed multi-field info from this input.
+      // 3. Determine if extraction/regex consumed any field from this input
+      //    (i.e. it was meaningful multi-field data, not just an answer to the current question).
       const consumed = Boolean(
         (merged.location && !fnolData.location?.trim()) ||
           (merged.description && !fnolData.description?.trim()) ||
           (merged.injuries && !fnolData.injuries?.trim())
       );
 
-      // 3. Mobile validation — only when current step is mobile AND nothing was consumed.
-      if (step.key === "mobile" && !consumed) {
-        const digits = text.replace(/\D/g, "");
-        if (!isMobileValid(digits)) {
-          setMessages((m) => [
-            ...m,
-            { role: "assistant", content: "That doesn't look like a valid 10-digit mobile number. Please try again." },
-          ]);
-          setLoading(false);
-          return;
-        }
-      }
-
-      // 4. Only assign raw input to the current step IF it's still empty after extraction
-      //    AND nothing was consumed (i.e. the input was actually answering the current step).
-      //    Guard 'safety' so it only accepts a yes/no answer — never a full sentence.
-      if (!merged[step.key]?.trim() && !consumed) {
-        if (step.key === "safety") {
-          if (/^(yes|no)$/i.test(text.trim())) {
-            merged.safety = text.trim();
+      // 4. UNIVERSAL FLOW:
+      //    - If consumed → skip validation entirely; do NOT force input onto current step.
+      //    - If NOT consumed → treat input as the answer to the current step
+      //      (with per-step validation).
+      if (!consumed) {
+        if (step.key === "mobile") {
+          const digits = text.replace(/\D/g, "");
+          if (!isMobileValid(digits)) {
+            setMessages((m) => [
+              ...m,
+              { role: "assistant", content: "That doesn't look like a valid 10-digit mobile number. Please try again." },
+            ]);
+            setLoading(false);
+            return;
           }
-          // else: leave safety empty, extraction may fill it later
+          merged.mobile = digits;
+        } else if (step.key === "safety") {
+          // Safety is optional — only accept yes/no. Otherwise mark as skipped
+          // so the flow moves on without re-asking.
+          if (/^(yes|y|no|n)$/i.test(text.trim())) {
+            merged.safety = /^y/i.test(text.trim()) ? "Yes" : "No";
+          } else {
+            merged.safety = "—"; // skipped sentinel
+          }
+        } else if (step.key === "injuries") {
+          // Optional — accept yes/no, otherwise skip without blocking.
+          if (/^(yes|y|no|n)$/i.test(text.trim())) {
+            merged.injuries = /^y/i.test(text.trim()) ? "Yes" : "No";
+          } else {
+            merged.injuries = "—";
+          }
         } else {
-          merged[step.key] = text;
+          // location / description — accept the raw text.
+          if (!merged[step.key]?.trim()) merged[step.key] = text;
         }
       }
 
