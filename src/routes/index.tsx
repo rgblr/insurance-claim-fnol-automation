@@ -388,7 +388,10 @@ function FnolPage() {
           <AnimatePresence mode="wait">
             {!submitted ? (
               <motion.div key="chat" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
-                <div ref={scrollRef} className="h-[55vh] max-h-[460px] overflow-y-auto p-4 space-y-3">
+                <div ref={scrollRef} className="h-[55vh] max-h-[460px] overflow-y-auto p-4 space-y-4">
+                  <p className="text-xs text-muted-foreground text-center px-2 pb-1">
+                    We'll guide you through reporting your accident in a few simple steps.
+                  </p>
                   {messages.map((m, i) => (
                     <motion.div
                       key={i}
