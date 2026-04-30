@@ -46,6 +46,20 @@ const FIELD_LABEL: Record<FieldKey, string> = {
   description: "What happened",
   injuries: "Injuries",
 };
+const INPUT_PLACEHOLDER: Record<FieldKey, string> = {
+  safety: "Type Yes or No",
+  mobile: "Enter 10-digit mobile number",
+  location: "Enter accident location",
+  description: "Briefly describe what happened",
+  injuries: "Yes or No",
+};
+const STEP_LABEL: Record<FieldKey, string> = {
+  safety: "Safety Check",
+  mobile: "Contact Number",
+  location: "Accident Location",
+  description: "Incident Details",
+  injuries: "Injury Check",
+};
 
 function isMobileValid(v: string) {
   return /^\d{10}$/.test(v.replace(/\D/g, ""));
