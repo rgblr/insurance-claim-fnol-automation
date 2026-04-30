@@ -366,8 +366,14 @@ function FnolPage() {
               {mode}
             </span>
           </div>
+          {/* Step indicator */}
+          {!submitted && !showSummary && activeStep && (
+            <p className="mt-3 text-[11px] opacity-90">
+              Step {activeStepNumber} of {STEPS.length} • {STEP_LABEL[activeStep.key]}
+            </p>
+          )}
           {/* Progress bar */}
-          <div className="mt-4 h-1 rounded-full bg-white/20 overflow-hidden">
+          <div className="mt-2 h-1 rounded-full bg-white/20 overflow-hidden">
             <motion.div
               className="h-full bg-white"
               initial={{ width: 0 }}
