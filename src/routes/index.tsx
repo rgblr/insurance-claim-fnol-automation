@@ -46,6 +46,20 @@ const FIELD_LABEL: Record<FieldKey, string> = {
   description: "What happened",
   injuries: "Injuries",
 };
+const INPUT_PLACEHOLDER: Record<FieldKey, string> = {
+  safety: "Type Yes or No",
+  mobile: "Enter 10-digit mobile number",
+  location: "Enter accident location",
+  description: "Briefly describe what happened",
+  injuries: "Yes or No",
+};
+const STEP_LABEL: Record<FieldKey, string> = {
+  safety: "Safety Check",
+  mobile: "Contact Number",
+  location: "Accident Location",
+  description: "Incident Details",
+  injuries: "Injury Check",
+};
 
 function isMobileValid(v: string) {
   return /^\d{10}$/.test(v.replace(/\D/g, ""));
@@ -322,6 +336,8 @@ function FnolPage() {
 
   const progress = STEPS.filter((s) => fnolData[s.key]?.trim()).length;
   const progressPct = Math.round((progress / STEPS.length) * 100);
+  const activeStep = getNextStep(fnolData);
+  const activeStepNumber = activeStep ? STEPS.findIndex((s) => s.key === activeStep.key) + 1 : STEPS.length;
 
   return (
     <div
@@ -350,8 +366,14 @@ function FnolPage() {
               {mode}
             </span>
           </div>
+          {/* Step indicator */}
+          {!submitted && !showSummary && activeStep && (
+            <p className="mt-3 text-[11px] opacity-90">
+              Step {activeStepNumber} of {STEPS.length} • {STEP_LABEL[activeStep.key]}
+            </p>
+          )}
           {/* Progress bar */}
-          <div className="mt-4 h-1 rounded-full bg-white/20 overflow-hidden">
+          <div className="mt-2 h-1 rounded-full bg-white/20 overflow-hidden">
             <motion.div
               className="h-full bg-white"
               initial={{ width: 0 }}
@@ -366,7 +388,10 @@ function FnolPage() {
           <AnimatePresence mode="wait">
             {!submitted ? (
               <motion.div key="chat" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
-                <div ref={scrollRef} className="h-[55vh] max-h-[460px] overflow-y-auto p-4 space-y-3">
+                <div ref={scrollRef} className="h-[55vh] max-h-[460px] overflow-y-auto p-4 space-y-4">
+                  <p className="text-xs text-muted-foreground text-center px-2 pb-1">
+                    We'll guide you through reporting your accident in a few simple steps.
+                  </p>
                   {messages.map((m, i) => (
                     <motion.div
                       key={i}
@@ -517,30 +542,55 @@ function FnolPage() {
 
                 {/* Composer */}
                 {!showSummary && (
-                  <div className="border-t p-3 flex gap-2 items-center">
-                    <Button
-                      size="icon"
-                      variant={mode === "voice" ? "default" : "ghost"}
-                      onClick={voiceActive ? stopVoice : startVoice}
-                      aria-label="Voice input"
-                      disabled={loading || pendingTranscript !== null}
-                    >
-                      <Mic className="h-4 w-4" />
-                    </Button>
-                    <Input
-                      value={input}
-                      onChange={(e) => setInput(e.target.value)}
-                      onKeyDown={(e) => e.key === "Enter" && send()}
-                      placeholder={getNextStep(fnolData)?.question ?? "Type your reply…"}
-                      disabled={loading || pendingTranscript !== null}
-                    />
-                    <Button
-                      size="icon"
-                      onClick={send}
-                      disabled={loading || !input.trim() || pendingTranscript !== null}
-                    >
-                      {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
-                    </Button>
+                  <div className="border-t">
+                    {/* Quick replies for yes/no steps */}
+                    {activeStep && (activeStep.key === "safety" || activeStep.key === "injuries") && (
+                      <div className="px-3 pt-3 flex gap-2">
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="rounded-full"
+                          disabled={loading || pendingTranscript !== null}
+                          onClick={() => handleUserInput("Yes", "chat")}
+                        >
+                          Yes
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="rounded-full"
+                          disabled={loading || pendingTranscript !== null}
+                          onClick={() => handleUserInput("No", "chat")}
+                        >
+                          No
+                        </Button>
+                      </div>
+                    )}
+                    <div className="p-3 flex gap-2 items-center">
+                      <Button
+                        size="icon"
+                        variant={mode === "voice" ? "default" : "ghost"}
+                        onClick={voiceActive ? stopVoice : startVoice}
+                        aria-label="Voice input"
+                        disabled={loading || pendingTranscript !== null}
+                      >
+                        <Mic className="h-4 w-4" />
+                      </Button>
+                      <Input
+                        value={input}
+                        onChange={(e) => setInput(e.target.value)}
+                        onKeyDown={(e) => e.key === "Enter" && send()}
+                        placeholder={activeStep ? INPUT_PLACEHOLDER[activeStep.key] : "Type your reply…"}
+                        disabled={loading || pendingTranscript !== null}
+                      />
+                      <Button
+                        size="icon"
+                        onClick={send}
+                        disabled={loading || !input.trim() || pendingTranscript !== null}
+                      >
+                        {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
+                      </Button>
+                    </div>
                   </div>
                 )}
               </motion.div>
@@ -569,7 +619,7 @@ function FnolPage() {
 
           {/* Footer */}
           <div className="px-4 py-2.5 text-center text-[11px] text-muted-foreground border-t bg-muted/30">
-            Available 24×7 · Hindi & English supported
+            Available 24×7 • English supported
           </div>
         </div>
       </Card>
