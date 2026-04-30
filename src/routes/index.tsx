@@ -619,7 +619,7 @@ function FnolPage() {
 
           {/* Footer */}
           <div className="px-4 py-2.5 text-center text-[11px] text-muted-foreground border-t bg-muted/30">
-            Available 24×7 · Hindi & English supported
+            Available 24×7 • English supported
           </div>
         </div>
       </Card>
