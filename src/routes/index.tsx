@@ -94,14 +94,11 @@ function FnolPage() {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
   }, [messages, loading, showSummary]);
 
-  // Derive the next step entirely from data — no separate currentStep state.
-  // Prefer the first missing REQUIRED field, then fall back to the first missing optional field.
+  // Single source of truth — the current step is the first incomplete step
+  // in STEPS order. Chat, step indicator, and input placeholder all derive
+  // from this so they stay perfectly in sync.
   function getNextStep(data: FnolData) {
-    return (
-      STEPS.find((step) => step.required && !data[step.key]?.trim()) ??
-      STEPS.find((step) => !step.required && !data[step.key]?.trim()) ??
-      null
-    );
+    return STEPS.find((step) => !data[step.key]?.trim()) ?? null;
   }
 
   function allRequiredFilled(data: FnolData) {
