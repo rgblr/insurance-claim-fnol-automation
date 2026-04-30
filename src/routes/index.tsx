@@ -114,18 +114,6 @@ function FnolPage() {
     // Echo user message in transcript.
     setMessages((m) => [...m, { role: "user", content: text, source }]);
 
-    // Validate mobile inline before calling extractor.
-    if (step.key === "mobile") {
-      const digits = text.replace(/\D/g, "");
-      if (!isMobileValid(digits)) {
-        setMessages((m) => [
-          ...m,
-          { role: "assistant", content: "That doesn't look like a valid 10-digit mobile number. Please try again." },
-        ]);
-        return;
-      }
-    }
-
     setLoading(true);
     try {
       // 1. Extraction-first — ask HF what structured fields are present in the input.
