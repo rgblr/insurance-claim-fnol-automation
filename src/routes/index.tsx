@@ -94,11 +94,12 @@ function FnolPage() {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
   }, [messages, loading, showSummary]);
 
-  // Single source of truth — the current step is the first incomplete step
-  // in STEPS order. Optional steps that have been skipped are marked with
-  // the sentinel "—" so they are no longer treated as the active step.
+  // Single source of truth — progression is driven by REQUIRED fields only.
+  // Safety is optional metadata and must never block the flow. Optional
+  // injuries is also non-blocking; we only surface it after all required
+  // fields are filled (so summary is reached cleanly without it).
   function getNextStep(data: FnolData) {
-    return STEPS.find((step) => !data[step.key]?.trim()) ?? null;
+    return STEPS.find((step) => step.required && !data[step.key]?.trim()) ?? null;
   }
 
   function allRequiredFilled(data: FnolData) {
@@ -120,7 +121,8 @@ function FnolPage() {
     setLastError(null);
 
     const step = getNextStep(fnolData);
-    if (!step) return;
+    // If summary is showing (no required step left), ignore further input.
+    if (!step && showSummary) return;
 
     // Echo user message in transcript.
     setMessages((m) => [...m, { role: "user", content: text, source }]);
@@ -128,7 +130,7 @@ function FnolPage() {
     setLoading(true);
     try {
       // 1. Extraction-first — ask HF what structured fields are present in the input.
-      const extractedRaw = await extract(text, step.key);
+      const extractedRaw = await extract(text, step?.key ?? "description");
 
       // Whitelist: only accept the three extractable fields.
       const allowedKeys: FieldKey[] = ["location", "description", "injuries"];
@@ -176,12 +178,27 @@ function FnolPage() {
           (merged.injuries && !fnolData.injuries?.trim())
       );
 
-      // 4. UNIVERSAL FLOW:
-      //    - If consumed → skip validation entirely; do NOT force input onto current step.
-      //    - If NOT consumed → treat input as the answer to the current step
-      //      (with per-step validation).
-      if (!consumed) {
-        if (step.key === "mobile") {
+      // 3b. Safety auto-handling — safety NEVER blocks the flow.
+      //     - If the user explicitly answered yes/no while safety is the
+      //       current required-less step, capture it.
+      //     - Otherwise mark it skipped so it is never re-asked.
+      if (!merged.safety?.trim()) {
+        const trimmed = text.trim();
+        const isYesNo = /^(yes|y|no|n)$/i.test(trimmed);
+        if (isYesNo && !consumed && !fnolData.mobile && !fnolData.location && !fnolData.description) {
+          merged.safety = /^y/i.test(trimmed) ? "Yes" : "No";
+        } else if (consumed || !isYesNo) {
+          // Any meaningful input (or non yes/no) → skip safety permanently.
+          merged.safety = "—";
+        }
+      }
+
+      // 4. UNIVERSAL FLOW for REQUIRED steps:
+      //    - If consumed → skip validation entirely.
+      //    - If NOT consumed → treat input as the answer to the current required step.
+      const requiredStep = STEPS.find((s) => s.required && !merged[s.key]?.trim());
+      if (!consumed && requiredStep) {
+        if (requiredStep.key === "mobile") {
           const digits = text.replace(/\D/g, "");
           if (!isMobileValid(digits)) {
             setMessages((m) => [
@@ -192,24 +209,9 @@ function FnolPage() {
             return;
           }
           merged.mobile = digits;
-        } else if (step.key === "safety") {
-          // Safety is optional — only accept yes/no. Otherwise mark as skipped
-          // so the flow moves on without re-asking.
-          if (/^(yes|y|no|n)$/i.test(text.trim())) {
-            merged.safety = /^y/i.test(text.trim()) ? "Yes" : "No";
-          } else {
-            merged.safety = "—"; // skipped sentinel
-          }
-        } else if (step.key === "injuries") {
-          // Optional — accept yes/no, otherwise skip without blocking.
-          if (/^(yes|y|no|n)$/i.test(text.trim())) {
-            merged.injuries = /^y/i.test(text.trim()) ? "Yes" : "No";
-          } else {
-            merged.injuries = "—";
-          }
         } else {
           // location / description — accept the raw text.
-          if (!merged[step.key]?.trim()) merged[step.key] = text;
+          if (!merged[requiredStep.key]?.trim()) merged[requiredStep.key] = text;
         }
       }
 
@@ -342,10 +344,13 @@ function FnolPage() {
     setMode("chat");
   }
 
-  const progress = STEPS.filter((s) => fnolData[s.key]?.trim()).length;
-  const progressPct = Math.round((progress / STEPS.length) * 100);
+  const REQUIRED_STEPS = STEPS.filter((s) => s.required);
+  const progress = REQUIRED_STEPS.filter((s) => fnolData[s.key]?.trim()).length;
+  const progressPct = Math.round((progress / REQUIRED_STEPS.length) * 100);
   const activeStep = getNextStep(fnolData);
-  const activeStepNumber = activeStep ? STEPS.findIndex((s) => s.key === activeStep.key) + 1 : STEPS.length;
+  const activeStepNumber = activeStep
+    ? REQUIRED_STEPS.findIndex((s) => s.key === activeStep.key) + 1
+    : REQUIRED_STEPS.length;
 
   return (
     <div
@@ -377,7 +382,7 @@ function FnolPage() {
           {/* Step indicator */}
           {!submitted && !showSummary && activeStep && (
             <p className="mt-3 text-[11px] opacity-90">
-              Step {activeStepNumber} of {STEPS.length} • {STEP_LABEL[activeStep.key]}
+              Step {activeStepNumber} of {REQUIRED_STEPS.length} • {STEP_LABEL[activeStep.key]}
             </p>
           )}
           {/* Progress bar */}
