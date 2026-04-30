@@ -121,7 +121,8 @@ function FnolPage() {
     setLastError(null);
 
     const step = getNextStep(fnolData);
-    if (!step) return;
+    // If summary is showing (no required step left), ignore further input.
+    if (!step && showSummary) return;
 
     // Echo user message in transcript.
     setMessages((m) => [...m, { role: "user", content: text, source }]);
@@ -129,7 +130,7 @@ function FnolPage() {
     setLoading(true);
     try {
       // 1. Extraction-first — ask HF what structured fields are present in the input.
-      const extractedRaw = await extract(text, step.key);
+      const extractedRaw = await extract(text, step?.key ?? "description");
 
       // Whitelist: only accept the three extractable fields.
       const allowedKeys: FieldKey[] = ["location", "description", "injuries"];
