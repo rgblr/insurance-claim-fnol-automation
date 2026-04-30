@@ -95,8 +95,8 @@ function FnolPage() {
   }, [messages, loading, showSummary]);
 
   // Single source of truth — the current step is the first incomplete step
-  // in STEPS order. Chat, step indicator, and input placeholder all derive
-  // from this so they stay perfectly in sync.
+  // in STEPS order. Optional steps that have been skipped are marked with
+  // the sentinel "—" so they are no longer treated as the active step.
   function getNextStep(data: FnolData) {
     return STEPS.find((step) => !data[step.key]?.trim()) ?? null;
   }
