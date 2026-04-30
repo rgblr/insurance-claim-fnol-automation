@@ -114,18 +114,6 @@ function FnolPage() {
     // Echo user message in transcript.
     setMessages((m) => [...m, { role: "user", content: text, source }]);
 
-    // Validate mobile inline before calling extractor.
-    if (step.key === "mobile") {
-      const digits = text.replace(/\D/g, "");
-      if (!isMobileValid(digits)) {
-        setMessages((m) => [
-          ...m,
-          { role: "assistant", content: "That doesn't look like a valid 10-digit mobile number. Please try again." },
-        ]);
-        return;
-      }
-    }
-
     setLoading(true);
     try {
       // 1. Extraction-first — ask HF what structured fields are present in the input.
@@ -169,9 +157,30 @@ function FnolPage() {
         }
       }
 
-      // 3. Only assign raw input to the current step IF it's still empty after extraction.
+      // Determine if extraction/regex consumed multi-field info from this input.
+      const consumed = Boolean(
+        (merged.location && !fnolData.location?.trim()) ||
+          (merged.description && !fnolData.description?.trim()) ||
+          (merged.injuries && !fnolData.injuries?.trim())
+      );
+
+      // 3. Mobile validation — only when current step is mobile AND nothing was consumed.
+      if (step.key === "mobile" && !consumed) {
+        const digits = text.replace(/\D/g, "");
+        if (!isMobileValid(digits)) {
+          setMessages((m) => [
+            ...m,
+            { role: "assistant", content: "That doesn't look like a valid 10-digit mobile number. Please try again." },
+          ]);
+          setLoading(false);
+          return;
+        }
+      }
+
+      // 4. Only assign raw input to the current step IF it's still empty after extraction
+      //    AND nothing was consumed (i.e. the input was actually answering the current step).
       //    Guard 'safety' so it only accepts a yes/no answer — never a full sentence.
-      if (!merged[step.key]?.trim()) {
+      if (!merged[step.key]?.trim() && !consumed) {
         if (step.key === "safety") {
           if (/^(yes|no)$/i.test(text.trim())) {
             merged.safety = text.trim();
