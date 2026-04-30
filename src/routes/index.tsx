@@ -542,30 +542,55 @@ function FnolPage() {
 
                 {/* Composer */}
                 {!showSummary && (
-                  <div className="border-t p-3 flex gap-2 items-center">
-                    <Button
-                      size="icon"
-                      variant={mode === "voice" ? "default" : "ghost"}
-                      onClick={voiceActive ? stopVoice : startVoice}
-                      aria-label="Voice input"
-                      disabled={loading || pendingTranscript !== null}
-                    >
-                      <Mic className="h-4 w-4" />
-                    </Button>
-                    <Input
-                      value={input}
-                      onChange={(e) => setInput(e.target.value)}
-                      onKeyDown={(e) => e.key === "Enter" && send()}
-                      placeholder={getNextStep(fnolData)?.question ?? "Type your reply…"}
-                      disabled={loading || pendingTranscript !== null}
-                    />
-                    <Button
-                      size="icon"
-                      onClick={send}
-                      disabled={loading || !input.trim() || pendingTranscript !== null}
-                    >
-                      {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
-                    </Button>
+                  <div className="border-t">
+                    {/* Quick replies for yes/no steps */}
+                    {activeStep && (activeStep.key === "safety" || activeStep.key === "injuries") && (
+                      <div className="px-3 pt-3 flex gap-2">
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="rounded-full"
+                          disabled={loading || pendingTranscript !== null}
+                          onClick={() => handleUserInput("Yes", "chat")}
+                        >
+                          Yes
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="rounded-full"
+                          disabled={loading || pendingTranscript !== null}
+                          onClick={() => handleUserInput("No", "chat")}
+                        >
+                          No
+                        </Button>
+                      </div>
+                    )}
+                    <div className="p-3 flex gap-2 items-center">
+                      <Button
+                        size="icon"
+                        variant={mode === "voice" ? "default" : "ghost"}
+                        onClick={voiceActive ? stopVoice : startVoice}
+                        aria-label="Voice input"
+                        disabled={loading || pendingTranscript !== null}
+                      >
+                        <Mic className="h-4 w-4" />
+                      </Button>
+                      <Input
+                        value={input}
+                        onChange={(e) => setInput(e.target.value)}
+                        onKeyDown={(e) => e.key === "Enter" && send()}
+                        placeholder={activeStep ? INPUT_PLACEHOLDER[activeStep.key] : "Type your reply…"}
+                        disabled={loading || pendingTranscript !== null}
+                      />
+                      <Button
+                        size="icon"
+                        onClick={send}
+                        disabled={loading || !input.trim() || pendingTranscript !== null}
+                      >
+                        {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
+                      </Button>
+                    </div>
                   </div>
                 )}
               </motion.div>
