@@ -336,6 +336,8 @@ function FnolPage() {
 
   const progress = STEPS.filter((s) => fnolData[s.key]?.trim()).length;
   const progressPct = Math.round((progress / STEPS.length) * 100);
+  const activeStep = getNextStep(fnolData);
+  const activeStepNumber = activeStep ? STEPS.findIndex((s) => s.key === activeStep.key) + 1 : STEPS.length;
 
   return (
     <div
