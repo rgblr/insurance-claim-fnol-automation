@@ -65,6 +65,19 @@ function isMobileValid(v: string) {
   return /^\d{10}$/.test(v.replace(/\D/g, ""));
 }
 
+// Convert spoken number words to digits.
+// "nine eight seven..." → "987..."; "my number is one two three" → "my number is 123"
+const NUMBER_WORDS: Record<string, string> = {
+  zero: "0", oh: "0", o: "0",
+  one: "1", two: "2", three: "3", four: "4", five: "5",
+  six: "6", seven: "7", eight: "8", nine: "9",
+};
+function wordsToDigits(input: string): string {
+  return input.replace(/\b(zero|oh|one|two|three|four|five|six|seven|eight|nine)\b/gi, (m) => {
+    return NUMBER_WORDS[m.toLowerCase()] ?? m;
+  });
+}
+
 function FnolPage() {
   const [mode, setMode] = useState<"chat" | "voice">("chat");
   const [messages, setMessages] = useState<Msg[]>([]);
