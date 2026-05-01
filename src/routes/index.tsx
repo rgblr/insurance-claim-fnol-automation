@@ -73,21 +73,40 @@ const NUMBER_WORDS: Record<string, string> = {
   six: "6", seven: "7", eight: "8", nine: "9",
 };
 function wordsToDigits(input: string): string {
-  // First handle "double X" / "triple X" repetition patterns.
-  let out = input.replace(
+  // Normalise punctuation/hyphens/commas between number words so "nine-eight"
+  // or "nine, eight" still tokenises as separate words.
+  let out = input.replace(/[-_,.]+/g, " ");
+
+  // Repeat: "double X" / "triple X" (also "double-three").
+  out = out.replace(
     /\b(double|triple)\s+(zero|oh|o|one|two|three|four|five|six|seven|eight|nine)\b/gi,
     (_m, qty: string, word: string) => {
       const digit = NUMBER_WORDS[word.toLowerCase()];
+      if (!digit) return _m;
       const count = qty.toLowerCase() === "triple" ? 3 : 2;
-      return digit ? digit.repeat(count) : _m;
+      return " " + digit.repeat(count) + " ";
     },
   );
-  // Then replace standalone number words.
+
+  // Standalone number words → digit.
   out = out.replace(
-    /\b(zero|oh|one|two|three|four|five|six|seven|eight|nine)\b/gi,
+    /\b(zero|oh|o|one|two|three|four|five|six|seven|eight|nine)\b/gi,
     (m) => NUMBER_WORDS[m.toLowerCase()] ?? m,
   );
   return out;
+}
+
+// Pull a 10-digit mobile number out of any free-form text (after normalising
+// spoken number words). Returns "" if none is found.
+function extractMobile(text: string): string {
+  const normalized = wordsToDigits(text);
+  // Look for any run of 10+ consecutive digits (allowing spaces between).
+  const compact = normalized.replace(/\s+/g, "");
+  const match = compact.match(/\d{10,}/);
+  if (match) return match[0].slice(-10);
+  // Fallback: total digit count is at least 10 → take the last 10.
+  const allDigits = compact.replace(/\D/g, "");
+  return allDigits.length >= 10 ? allDigits.slice(-10) : "";
 }
 
 function FnolPage() {
