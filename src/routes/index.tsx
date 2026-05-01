@@ -382,7 +382,7 @@ function FnolPage() {
           {/* Step indicator */}
           {!submitted && !showSummary && activeStep && (
             <p className="mt-3 text-[11px] opacity-90">
-              Step {activeStepNumber} of {REQUIRED_STEPS.length} • {STEP_LABEL[activeStep.key]}
+              Step {activeStepNumber} of {STEPS.length} • {STEP_LABEL[activeStep.key]}
             </p>
           )}
           {/* Progress bar */}
