@@ -346,13 +346,11 @@ function FnolPage() {
     setMode("chat");
   }
 
-  const REQUIRED_STEPS = STEPS.filter((s) => s.required);
-  const progress = REQUIRED_STEPS.filter((s) => fnolData[s.key]?.trim()).length;
-  const progressPct = Math.round((progress / REQUIRED_STEPS.length) * 100);
-  const activeStep = getNextStep(fnolData);
-  const activeStepNumber = activeStep
-    ? REQUIRED_STEPS.findIndex((s) => s.key === activeStep.key) + 1
-    : REQUIRED_STEPS.length;
+  const activeStep = getCurrentStep(fnolData);
+  const activeStepIndex = getStepIndex(activeStep);
+  const activeStepNumber = activeStepIndex >= 0 ? activeStepIndex + 1 : STEPS.length;
+  const progress = STEPS.filter((s) => fnolData[s.key]?.trim()).length;
+  const progressPct = Math.round((progress / STEPS.length) * 100);
 
   return (
     <div
