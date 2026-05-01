@@ -94,12 +94,18 @@ function FnolPage() {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
   }, [messages, loading, showSummary]);
 
-  // Single source of truth — progression is driven by REQUIRED fields only.
-  // Safety is optional metadata and must never block the flow. Optional
-  // injuries is also non-blocking; we only surface it after all required
-  // fields are filled (so summary is reached cleanly without it).
-  function getNextStep(data: FnolData) {
+  // Single source of truth — first incomplete REQUIRED step.
+  function getCurrentStep(data: FnolData) {
     return STEPS.find((step) => step.required && !data[step.key]?.trim()) ?? null;
+  }
+
+  function getStepIndex(step: { key: FieldKey } | null) {
+    if (!step) return -1;
+    return STEPS.findIndex((s) => s.key === step.key);
+  }
+
+  function getQuestion(key: FieldKey) {
+    return STEPS.find((s) => s.key === key)?.question ?? "";
   }
 
   function allRequiredFilled(data: FnolData) {
@@ -120,114 +126,111 @@ function FnolPage() {
     if (!text || loading || submitting) return;
     setLastError(null);
 
-    const step = getNextStep(fnolData);
-    // If summary is showing (no required step left), ignore further input.
-    if (!step && showSummary) return;
+    const currentStep = getCurrentStep(fnolData);
+    if (!currentStep && showSummary) return;
 
-    // Echo user message in transcript.
     setMessages((m) => [...m, { role: "user", content: text, source }]);
-
     setLoading(true);
-    try {
-      // 1. Extraction-first — ask HF what structured fields are present in the input.
-      const extractedRaw = await extract(text, step?.key ?? "description");
 
-      // Whitelist: only accept the three extractable fields.
+    try {
+      // STEP 1: Extract structured data FIRST.
+      const extractedRaw = await extract(text, currentStep?.key ?? "description");
       const allowedKeys: FieldKey[] = ["location", "description", "injuries"];
       const extracted: Partial<FnolData> = {};
       if (extractedRaw) {
         (Object.keys(extractedRaw) as FieldKey[]).forEach((key) => {
-          if (allowedKeys.includes(key)) {
-            extracted[key] = extractedRaw[key];
+          if (allowedKeys.includes(key) && extractedRaw[key] && String(extractedRaw[key]).trim()) {
+            extracted[key] = String(extractedRaw[key]).trim();
           }
         });
       }
 
-      console.log("INPUT:", text);
-      console.log("EXTRACTED:", JSON.stringify(extracted, null, 2));
-      console.log("BEFORE fnolData:", JSON.stringify(fnolData, null, 2));
+      // Regex safety net.
+      if (!extracted.location) {
+        const match = text.match(/near ([a-zA-Z\s]+)/i);
+        if (match) extracted.location = match[1].trim();
+      }
+      if (!extracted.injuries) {
+        const lower = text.toLowerCase();
+        if (lower.includes("no injuries") || lower.includes("no injury")) {
+          extracted.injuries = "No";
+        } else if (lower.includes("injury") || lower.includes("injuries")) {
+          extracted.injuries = "Yes";
+        }
+      }
 
-      // 2. Merge extracted fields into fnolData FIRST (only fill empty slots — never overwrite).
+      // Merge — never overwrite existing values.
       const merged: FnolData = { ...fnolData };
       (Object.keys(extracted) as FieldKey[]).forEach((k) => {
         const val = extracted[k];
-        if (val && String(val).trim() && !merged[k]?.trim()) {
-          merged[k] = String(val).trim();
-        }
+        if (val && !merged[k]?.trim()) merged[k] = val;
       });
 
-      // 2b. Regex safety net — catch obvious cues the extractor might miss.
-      if (!merged.location) {
-        const match = text.match(/near ([a-zA-Z\s]+)/i);
-        if (match) merged.location = match[1].trim();
-      }
-      if (!merged.injuries) {
-        const lower = text.toLowerCase();
-        if (lower.includes("no injuries") || lower.includes("no injury")) {
-          merged.injuries = "No";
-        } else if (lower.includes("injury") || lower.includes("injuries")) {
-          merged.injuries = "Yes";
+      // STEP 2: Detect meaningful input.
+      const consumed =
+        !!extracted.location || !!extracted.description || !!extracted.injuries;
+
+      // STEP 3: If meaningful → SKIP validation, just advance.
+      if (consumed) {
+        // Mark safety as skipped so it never re-asks.
+        if (!merged.safety?.trim()) merged.safety = "—";
+        if (merged.mobile) merged.mobile = merged.mobile.replace(/\D/g, "").slice(-10);
+        setFnolData(merged);
+        const nextStep = getCurrentStep(merged);
+        if (nextStep) {
+          setMessages((m) => [...m, { role: "assistant", content: getQuestion(nextStep.key) }]);
+        } else {
+          setMessages((m) => [
+            ...m,
+            { role: "assistant", content: "Thanks — I have everything I need. Here's a quick summary." },
+          ]);
+          setShowSummary(true);
         }
+        return;
       }
 
-      // 3. Determine if extraction/regex consumed any field from this input
-      //    (i.e. it was meaningful multi-field data, not just an answer to the current question).
-      const consumed = Boolean(
-        (merged.location && !fnolData.location?.trim()) ||
-          (merged.description && !fnolData.description?.trim()) ||
-          (merged.injuries && !fnolData.injuries?.trim())
-      );
+      // STEP 4: No extraction — validate against current step.
+      if (!currentStep) {
+        // Nothing required left; just go to summary.
+        setFnolData(merged);
+        setMessages((m) => [
+          ...m,
+          { role: "assistant", content: "Thanks — I have everything I need. Here's a quick summary." },
+        ]);
+        setShowSummary(true);
+        return;
+      }
 
-      // 3b. Safety auto-handling — safety NEVER blocks the flow.
-      //     - If the user explicitly answered yes/no while safety is the
-      //       current required-less step, capture it.
-      //     - Otherwise mark it skipped so it is never re-asked.
+      if (currentStep.key === "mobile") {
+        const digits = text.replace(/\D/g, "");
+        if (!/^\d{10}$/.test(digits)) {
+          setMessages((m) => [
+            ...m,
+            { role: "assistant", content: "That doesn't look like a valid 10-digit mobile number. Please try again." },
+          ]);
+          setLoading(false);
+          return;
+        }
+        merged.mobile = digits;
+      } else {
+        // location / description fallback — accept raw text.
+        merged[currentStep.key] = text;
+      }
+
+      // Safety: if user typed yes/no while safety still empty AND nothing else captured, record it.
       if (!merged.safety?.trim()) {
-        const trimmed = text.trim();
-        const isYesNo = /^(yes|y|no|n)$/i.test(trimmed);
-        if (isYesNo && !consumed && !fnolData.mobile && !fnolData.location && !fnolData.description) {
-          merged.safety = /^y/i.test(trimmed) ? "Yes" : "No";
-        } else if (consumed || !isYesNo) {
-          // Any meaningful input (or non yes/no) → skip safety permanently.
+        const isYesNo = /^(yes|y|no|n)$/i.test(text);
+        if (isYesNo && currentStep.key !== "mobile") {
+          merged.safety = /^y/i.test(text) ? "Yes" : "No";
+        } else {
           merged.safety = "—";
         }
       }
 
-      // 4. UNIVERSAL FLOW for REQUIRED steps:
-      //    - If consumed → skip validation entirely.
-      //    - If NOT consumed → treat input as the answer to the current required step.
-      const requiredStep = STEPS.find((s) => s.required && !merged[s.key]?.trim());
-      if (!consumed && requiredStep) {
-        if (requiredStep.key === "mobile") {
-          const digits = text.replace(/\D/g, "");
-          if (!isMobileValid(digits)) {
-            setMessages((m) => [
-              ...m,
-              { role: "assistant", content: "That doesn't look like a valid 10-digit mobile number. Please try again." },
-            ]);
-            setLoading(false);
-            return;
-          }
-          merged.mobile = digits;
-        } else {
-          // location / description — accept the raw text.
-          if (!merged[requiredStep.key]?.trim()) merged[requiredStep.key] = text;
-        }
-      }
-
-      // Normalise mobile to 10 digits.
-      if (merged.mobile) merged.mobile = merged.mobile.replace(/\D/g, "").slice(-10);
-
-      console.log("AFTER fnolData:", JSON.stringify(merged, null, 2));
-
       setFnolData(merged);
-
-      // 4. Decide what to ask next directly from `merged` — never trust stale state.
-      const nextStep = getNextStep(merged);
-
-      // 5. Ask the next question, or show summary if done.
+      const nextStep = getCurrentStep(merged);
       if (nextStep) {
-        setMessages((m) => [...m, { role: "assistant", content: nextStep.question }]);
+        setMessages((m) => [...m, { role: "assistant", content: getQuestion(nextStep.key) }]);
       } else {
         setMessages((m) => [
           ...m,
@@ -237,7 +240,6 @@ function FnolPage() {
       }
     } catch (e) {
       console.error(e);
-      // Roll back the user echo so retry is clean.
       setMessages((m) => m.slice(0, -1));
       setLastError({ text, source });
     } finally {
@@ -271,7 +273,7 @@ function FnolPage() {
         await new Promise((r) => setTimeout(r, 1400));
         setVoiceActive(false);
         const transcript =
-          getNextStep(fnolData)?.key === "mobile"
+          getCurrentStep(fnolData)?.key === "mobile"
             ? "9876543210"
             : "There was a minor accident near Bellandur, Bangalore. No injuries.";
         setPendingTranscript(transcript);
@@ -344,13 +346,11 @@ function FnolPage() {
     setMode("chat");
   }
 
-  const REQUIRED_STEPS = STEPS.filter((s) => s.required);
-  const progress = REQUIRED_STEPS.filter((s) => fnolData[s.key]?.trim()).length;
-  const progressPct = Math.round((progress / REQUIRED_STEPS.length) * 100);
-  const activeStep = getNextStep(fnolData);
-  const activeStepNumber = activeStep
-    ? REQUIRED_STEPS.findIndex((s) => s.key === activeStep.key) + 1
-    : REQUIRED_STEPS.length;
+  const activeStep = getCurrentStep(fnolData);
+  const activeStepIndex = getStepIndex(activeStep);
+  const activeStepNumber = activeStepIndex >= 0 ? activeStepIndex + 1 : STEPS.length;
+  const progress = STEPS.filter((s) => fnolData[s.key]?.trim()).length;
+  const progressPct = Math.round((progress / STEPS.length) * 100);
 
   return (
     <div
@@ -382,7 +382,7 @@ function FnolPage() {
           {/* Step indicator */}
           {!submitted && !showSummary && activeStep && (
             <p className="mt-3 text-[11px] opacity-90">
-              Step {activeStepNumber} of {REQUIRED_STEPS.length} • {STEP_LABEL[activeStep.key]}
+              Step {activeStepNumber} of {STEPS.length} • {STEP_LABEL[activeStep.key]}
             </p>
           )}
           {/* Progress bar */}
