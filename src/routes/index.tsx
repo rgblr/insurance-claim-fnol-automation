@@ -204,6 +204,13 @@ function FnolPage() {
         }
       }
 
+      // Always try to pull a mobile number out of the utterance, regardless
+      // of which step we're on (e.g. "my number is nine eight seven...").
+      if (!extracted.mobile) {
+        const m = extractMobile(text);
+        if (m) extracted.mobile = m;
+      }
+
       // Merge — never overwrite existing values.
       const merged: FnolData = { ...fnolData };
       (Object.keys(extracted) as FieldKey[]).forEach((k) => {
@@ -213,7 +220,7 @@ function FnolPage() {
 
       // STEP 2: Detect meaningful input.
       const consumed =
-        !!extracted.location || !!extracted.description || !!extracted.injuries;
+        !!extracted.location || !!extracted.description || !!extracted.injuries || !!extracted.mobile;
 
       // STEP 3: If meaningful → SKIP validation, just advance.
       if (consumed) {
