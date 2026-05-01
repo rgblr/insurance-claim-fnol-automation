@@ -73,9 +73,21 @@ const NUMBER_WORDS: Record<string, string> = {
   six: "6", seven: "7", eight: "8", nine: "9",
 };
 function wordsToDigits(input: string): string {
-  return input.replace(/\b(zero|oh|one|two|three|four|five|six|seven|eight|nine)\b/gi, (m) => {
-    return NUMBER_WORDS[m.toLowerCase()] ?? m;
-  });
+  // First handle "double X" / "triple X" repetition patterns.
+  let out = input.replace(
+    /\b(double|triple)\s+(zero|oh|o|one|two|three|four|five|six|seven|eight|nine)\b/gi,
+    (_m, qty: string, word: string) => {
+      const digit = NUMBER_WORDS[word.toLowerCase()];
+      const count = qty.toLowerCase() === "triple" ? 3 : 2;
+      return digit ? digit.repeat(count) : _m;
+    },
+  );
+  // Then replace standalone number words.
+  out = out.replace(
+    /\b(zero|oh|one|two|three|four|five|six|seven|eight|nine)\b/gi,
+    (m) => NUMBER_WORDS[m.toLowerCase()] ?? m,
+  );
+  return out;
 }
 
 function FnolPage() {
