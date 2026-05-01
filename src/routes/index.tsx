@@ -203,7 +203,8 @@ function FnolPage() {
       }
 
       if (currentStep.key === "mobile") {
-        const digits = text.replace(/\D/g, "");
+        const normalized = wordsToDigits(text);
+        const digits = normalized.replace(/\D/g, "").slice(-10);
         if (!/^\d{10}$/.test(digits)) {
           setMessages((m) => [
             ...m,
