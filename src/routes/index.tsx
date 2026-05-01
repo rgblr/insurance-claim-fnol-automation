@@ -94,9 +94,10 @@ function FnolPage() {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
   }, [messages, loading, showSummary]);
 
-  // Single source of truth — first incomplete REQUIRED step.
+  // Single source of truth — first incomplete step in defined order.
+  // UI (step indicator, chat question, input placeholder) all derive from this.
   function getCurrentStep(data: FnolData) {
-    return STEPS.find((step) => step.required && !data[step.key]?.trim()) ?? null;
+    return STEPS.find((step) => !data[step.key]?.trim()) ?? null;
   }
 
   function getStepIndex(step: { key: FieldKey } | null) {
