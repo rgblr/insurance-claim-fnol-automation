@@ -370,20 +370,48 @@ function FnolPage() {
     setMode("chat");
   }
 
+  function generateClaimId() {
+    const d = new Date();
+    const pad = (n: number) => String(n).padStart(2, "0");
+    const ymd = `${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}`;
+    const hms = `${pad(d.getHours())}${pad(d.getMinutes())}${pad(d.getSeconds())}`;
+    return `CLM-${ymd}-${hms}`;
+  }
+
+  function normalizeYesNo(v: string): string {
+    const t = (v ?? "").trim();
+    if (/^y(es)?$/i.test(t)) return "Yes";
+    if (/^n(o)?$/i.test(t)) return "No";
+    return t;
+  }
+
   async function submitFNOL() {
     if (!allRequiredFilled(fnolData)) {
       toast.error("Please fill location and description first.");
       return;
     }
     setSubmitting(true);
+    const claimid = generateClaimId();
+    const payload = {
+      claimid,
+      timestamp: new Date().toISOString(),
+      safety: normalizeYesNo(fnolData.safety),
+      mobile: fnolData.mobile,
+      location: fnolData.location,
+      description: fnolData.description,
+      injuries: normalizeYesNo(fnolData.injuries),
+    };
     try {
-      const { data } = await supabase.functions.invoke("fnol-submit", {
-        body: { fnolData, transcript: messages, channel: mode },
+      const res = await fetch("https://hook.eu1.make.com/v6zxfe8jqgq115au1h26vtj9r6cwfmb1", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
       });
-      setSubmitted({ referenceId: data?.referenceId ?? `FNOL-${Date.now().toString(36).toUpperCase()}` });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      setSubmitted({ referenceId: claimid });
     } catch (e) {
       console.error(e);
-      toast.error("Submission failed — try again.");
+      toast.error("Submission failed. Please try again.");
     } finally {
       setSubmitting(false);
     }
