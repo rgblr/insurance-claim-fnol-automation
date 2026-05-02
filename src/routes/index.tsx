@@ -412,13 +412,6 @@ function FnolPage() {
     return `CLM-${ymd}-${hms}`;
   }
 
-  function normalizeYesNo(v: string): string {
-    const t = (v ?? "").trim();
-    if (/^y(es)?$/i.test(t)) return "Yes";
-    if (/^n(o)?$/i.test(t)) return "No";
-    return t;
-  }
-
   async function submitFNOL() {
     if (!allRequiredFilled(fnolData)) {
       toast.error("Please fill location and description first.");
@@ -430,7 +423,7 @@ function FnolPage() {
       claimid,
       timestamp: new Date().toISOString(),
       safety: normalizeYesNo(fnolData.safety),
-      mobile: fnolData.mobile,
+      mobile: normalizeMobileInput(fnolData.mobile),
       location: fnolData.location,
       description: fnolData.description,
       injuries: normalizeYesNo(fnolData.injuries),
