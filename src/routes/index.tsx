@@ -697,12 +697,12 @@ function FnolPage() {
               >
                 <CheckCircle2 className="h-16 w-16 text-primary" />
                 <h2 className="text-xl font-semibold">Claim received</h2>
-                <p className="text-sm text-muted-foreground">Your reference ID is</p>
+                <p className="text-sm text-muted-foreground">Your Claim ID is</p>
                 <div className="font-mono text-lg px-4 py-2 rounded-lg bg-assistant-bubble">
                   {submitted.referenceId}
                 </div>
                 <p className="text-xs text-muted-foreground max-w-xs">
-                  A claims specialist will reach out shortly. Stay safe.
+                  Your claim has been submitted. An adjuster will contact you shortly.
                 </p>
                 <Button variant="outline" onClick={startOver}>
                   Start a new report
