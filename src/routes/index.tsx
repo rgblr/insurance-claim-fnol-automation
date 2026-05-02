@@ -126,22 +126,17 @@ export function normalizeMobileInput(text: string): string {
 }
 
 // Normalise any affirmative/negative input (typed or spoken) → "Yes" | "No".
-export function normalizeYesNo(text: string): "Yes" | "No" {
-  const t = String(text ?? "").toLowerCase().trim();
-  if (!t) return "No";
-  const yesPatterns = [
-    /\byes\b/, /\byeah\b/, /\byep\b/, /\byup\b/, /^y$/,
-    /\bcorrect\b/, /\bright\b/, /\bsure\b/,
-    /\babsolutely\b/, /\bof course\b/, /\bdefinitely\b/, /\baffirmative\b/,
-  ];
-  const noPatterns = [
-    /\bnot really\b/, /\bno\b/, /\bnope\b/, /\bnah\b/, /^n$/,
-    /\bnegative\b/, /\bnone\b/, /\bnever\b/,
-  ];
-  for (const p of noPatterns) if (p.test(t)) return "No";
-  for (const p of yesPatterns) if (p.test(t)) return "Yes";
+export const normalizeYesNo = (text: string): "Yes" | "No" => {
+  if (!text) return "No";
+  const lower = text.toLowerCase().trim();
+  const isExactNo = /\bno\b/.test(lower);
+  const isExactYes = /\byes\b|\by\b/.test(lower);
+  const yesVariants = ['yeah', 'yep', 'yup', 'correct', 'right', 'sure', 'absolutely', 'of course', 'definitely', 'affirmative'];
+  const noVariants = ['nope', 'nah', 'negative', 'not really', 'none', 'never'];
+  if (isExactYes || yesVariants.some(v => lower.includes(v))) return "Yes";
+  if (isExactNo || noVariants.some(v => lower.includes(v))) return "No";
   return "No";
-}
+};
 
 function FnolPage() {
   const [mode, setMode] = useState<"chat" | "voice">("chat");
