@@ -425,7 +425,7 @@ function FnolPage() {
     const claimid = generateClaimId();
     const payload = {
       claimid,
-      timestamp: new Date().toISOString(),
+      timestamp: getISTTimestamp(),
       safety: normalizeYesNo(fnolData.safety),
       mobile: normalizeMobileInput(fnolData.mobile),
       location: fnolData.location,
