@@ -109,6 +109,40 @@ function extractMobile(text: string): string {
   return allDigits.length >= 10 ? allDigits.slice(-10) : "";
 }
 
+// Normalise any mobile input (typed or spoken) into a digits-only string,
+// preserving a leading "+" for country codes when present.
+export function normalizeMobileInput(text: string): string {
+  if (!text) return "";
+  // Convert spoken "plus" → "+"
+  let out = String(text).replace(/\bplus\b/gi, "+");
+  // Convert spoken number words / "double X" → digits
+  out = wordsToDigits(out);
+  // Detect leading + (after optional whitespace) for country code
+  const hasPlus = /^\s*\+/.test(out) || /\+\s*\d/.test(out);
+  // Strip everything except digits
+  const digits = out.replace(/\D/g, "");
+  if (!digits) return "";
+  return hasPlus ? `+${digits}` : digits;
+}
+
+// Normalise any affirmative/negative input (typed or spoken) → "Yes" | "No".
+export function normalizeYesNo(text: string): "Yes" | "No" {
+  const t = String(text ?? "").toLowerCase().trim();
+  if (!t) return "No";
+  const yesPatterns = [
+    /\byes\b/, /\byeah\b/, /\byep\b/, /\byup\b/, /^y$/,
+    /\bcorrect\b/, /\bright\b/, /\bsure\b/,
+    /\babsolutely\b/, /\bof course\b/, /\bdefinitely\b/, /\baffirmative\b/,
+  ];
+  const noPatterns = [
+    /\bnot really\b/, /\bno\b/, /\bnope\b/, /\bnah\b/, /^n$/,
+    /\bnegative\b/, /\bnone\b/, /\bnever\b/,
+  ];
+  for (const p of noPatterns) if (p.test(t)) return "No";
+  for (const p of yesPatterns) if (p.test(t)) return "Yes";
+  return "No";
+}
+
 function FnolPage() {
   const [mode, setMode] = useState<"chat" | "voice">("chat");
   const [messages, setMessages] = useState<Msg[]>([]);
