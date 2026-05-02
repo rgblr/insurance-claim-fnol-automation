@@ -399,11 +399,20 @@ function FnolPage() {
     setMode("chat");
   }
 
+  function getISTTimestamp() {
+    const now = new Date();
+    const istOffset = 5.5 * 60 * 60 * 1000; // IST is UTC+5:30
+    const istTime = new Date(now.getTime() + istOffset);
+    return istTime.toISOString().replace("Z", "+05:30");
+  }
+
   function generateClaimId() {
-    const d = new Date();
+    const now = new Date();
+    const istOffset = 5.5 * 60 * 60 * 1000;
+    const istNow = new Date(now.getTime() + istOffset);
     const pad = (n: number) => String(n).padStart(2, "0");
-    const ymd = `${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}`;
-    const hms = `${pad(d.getHours())}${pad(d.getMinutes())}${pad(d.getSeconds())}`;
+    const ymd = `${istNow.getUTCFullYear()}${pad(istNow.getUTCMonth() + 1)}${pad(istNow.getUTCDate())}`;
+    const hms = `${pad(istNow.getUTCHours())}${pad(istNow.getUTCMinutes())}${pad(istNow.getUTCSeconds())}`;
     return `CLM-${ymd}-${hms}`;
   }
 
@@ -416,7 +425,7 @@ function FnolPage() {
     const claimid = generateClaimId();
     const payload = {
       claimid,
-      timestamp: new Date().toISOString(),
+      timestamp: getISTTimestamp(),
       safety: normalizeYesNo(fnolData.safety),
       mobile: normalizeMobileInput(fnolData.mobile),
       location: fnolData.location,
