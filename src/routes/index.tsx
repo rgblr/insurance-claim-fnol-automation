@@ -593,10 +593,22 @@ function FnolPage() {
     setMode("chat");
   }
 
-  const activeStep = getCurrentStep(fnolData);
-  const activeStepIndex = getStepIndex(activeStep);
-  const activeStepNumber = activeStepIndex >= 0 ? activeStepIndex + 1 : STEPS.length;
-  const progress = STEPS.filter((s) => fnolData[s.key]?.trim()).length;
+  const chatActiveStep = getCurrentStep(fnolData);
+  const chatActiveStepIndex = getStepIndex(chatActiveStep);
+  // In voice mode, derive step indicator from VAPI-driven voiceStepIndex.
+  const isVoice = mode === "voice";
+  const voiceIdxClamped = Math.min(voiceStepIndex, STEPS.length - 1);
+  const activeStep = isVoice ? STEPS[voiceIdxClamped] : chatActiveStep;
+  const activeStepIndex = isVoice ? voiceIdxClamped : chatActiveStepIndex;
+  const activeStepNumber =
+    isVoice
+      ? Math.min(voiceStepIndex + 1, STEPS.length)
+      : activeStepIndex >= 0
+        ? activeStepIndex + 1
+        : STEPS.length;
+  const progress = isVoice
+    ? Math.min(voiceStepIndex, STEPS.length)
+    : STEPS.filter((s) => fnolData[s.key]?.trim()).length;
   const progressPct = Math.round((progress / STEPS.length) * 100);
 
   return (
