@@ -515,6 +515,42 @@ function FnolPage() {
     return `CLM-${ymd}-${hms}`;
   }
 
+  async function submitVoiceFNOL() {
+    setSubmitting(true);
+    const claimid = generateClaimId();
+    const payload = {
+      claimid,
+      timestamp: getISTTimestamp(),
+      safety: normalizeYesNo(editableVoice.safety),
+      mobile: normalizeMobileInput(editableVoice.mobile),
+      location: editableVoice.location,
+      description: editableVoice.description,
+      injuries: normalizeYesNo(editableVoice.injuries),
+    };
+    try {
+      const res = await fetch("https://hook.eu1.make.com/v6zxfe8jqgq115au1h26vtj9r6cwfmb1", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      // Stop VAPI session ONLY at successful submit.
+      try { vapiRef.current?.stop?.(); } catch {}
+      vapiRef.current = null;
+      voiceFlowActiveRef.current = false;
+      showVoiceReviewRef.current = false;
+      setShowVoiceReview(false);
+      setVoiceFlowActive(false);
+      setVoiceActive(false);
+      setSubmitted({ referenceId: claimid });
+    } catch (e) {
+      console.error(e);
+      toast.error("Submission failed. Please try again.");
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
   async function submitFNOL() {
     if (!allRequiredFilled(fnolData)) {
       toast.error("Please fill location and description first.");
