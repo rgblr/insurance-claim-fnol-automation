@@ -358,61 +358,145 @@ function FnolPage() {
     await handleUserInput(t, "chat");
   }
 
-  // Voice via Vapi — used ONLY for speech→text. The transcript is staged
-  // for review then sent through handleUserInput, the same path as chat.
+  // ── Pre-initialize VAPI on mount, kept muted until user activates ──────────
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const { data } = await supabase.functions.invoke("fnol-vapi-config");
+        if (cancelled) return;
+        if (!data?.configured) return; // mock fallback handled in startVoice
+        const { default: Vapi } = await import("@vapi-ai/web");
+        if (cancelled) return;
+        const vapi = new Vapi(data.publicKey);
+        vapiRef.current = vapi;
+
+        vapi.on("call-start", () => {
+          vapiReadyRef.current = true;
+          setMutedSafe(true);
+        });
+        vapi.on("call-end", () => {
+          vapiReadyRef.current = false;
+          setVoiceActive(false);
+          setVoiceFlowActive(false);
+          voiceFlowActiveRef.current = false;
+        });
+        vapi.on("speech-start", () => {
+          // Assistant started speaking → mute mic to avoid feedback
+          if (voiceFlowActiveRef.current) setMutedSafe(true);
+        });
+        vapi.on("speech-end", () => {
+          // Assistant finished → auto-resume listening for the next answer
+          if (voiceFlowActiveRef.current && !showVoiceReviewRef.current) {
+            setMutedSafe(false);
+            setVoiceActive(true);
+          }
+        });
+        vapi.on("message", (m: any) => {
+          if (
+            m.type === "transcript" &&
+            m.transcriptType === "final" &&
+            m.role === "user" &&
+            voiceFlowActiveRef.current &&
+            !showVoiceReviewRef.current
+          ) {
+            const idx = voiceStepIndexRef.current;
+            const step = STEPS[idx];
+            if (!step) return;
+            const next = { ...voiceAnswersRef.current, [step.key]: m.transcript } as FnolData;
+            voiceAnswersRef.current = next;
+            setVoiceAnswers(next);
+            setMutedSafe(true);
+            setVoiceActive(false);
+            const nextIdx = idx + 1;
+            if (nextIdx >= STEPS.length) {
+              voiceStepIndexRef.current = nextIdx;
+              setVoiceStepIndex(nextIdx);
+              showVoiceReviewRef.current = true;
+              setShowVoiceReview(true);
+              setEditableVoice(next);
+            } else {
+              voiceStepIndexRef.current = nextIdx;
+              setVoiceStepIndex(nextIdx);
+            }
+          }
+        });
+        vapi.on("error", (e: any) => console.error(e));
+
+        await vapi.start(data.assistantId);
+        setMutedSafe(true);
+      } catch (e) {
+        console.error("VAPI pre-init failed", e);
+      }
+    })();
+    return () => {
+      cancelled = true;
+      try { vapiRef.current?.stop?.(); } catch {}
+      vapiRef.current = null;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Mic press: instant UI, unmute the pre-warmed session, start continuous flow.
   async function startVoice() {
     setMode("voice");
-    try {
-      const { data } = await supabase.functions.invoke("fnol-vapi-config");
-      if (!data?.configured) {
-        // Mock voice for demo when Vapi isn't configured.
-        setVoiceActive(true);
-        await new Promise((r) => setTimeout(r, 1400));
-        setVoiceActive(false);
-        const transcript =
-          getCurrentStep(fnolData)?.key === "mobile"
-            ? "9876543210"
-            : "There was a minor accident near Bellandur, Bangalore. No injuries.";
-        setPendingTranscript(transcript);
-        setMode("chat");
-        return;
-      }
-      const { default: Vapi } = await import("@vapi-ai/web");
-      const vapi = new Vapi(data.publicKey);
-      vapiRef.current = vapi;
-      vapi.on("call-start", () => setVoiceActive(true));
-      vapi.on("call-end", () => setVoiceActive(false));
-      vapi.on("message", (m: any) => {
-        if (m.type === "transcript" && m.transcriptType === "final" && m.role === "user") {
-          setPendingTranscript(m.transcript);
-          setMode("chat");
-          try {
-            vapi.stop();
-          } catch {}
-        }
-      });
-      vapi.on("error", (e: any) => {
-        console.error(e);
-        toast.error("Voice unavailable — try chat");
-        setVoiceActive(false);
-        setMode("chat");
-      });
-      await vapi.start(data.assistantId);
-    } catch (e) {
-      console.error(e);
-      toast.error("Voice unavailable — try chat");
+    setVoiceActive(true);
+    setVoiceFlowActive(true);
+    voiceFlowActiveRef.current = true;
+    voiceStepIndexRef.current = 0;
+    setVoiceStepIndex(0);
+    voiceAnswersRef.current = EMPTY_DATA;
+    setVoiceAnswers(EMPTY_DATA);
+    showVoiceReviewRef.current = false;
+    setShowVoiceReview(false);
+
+    if (!vapiRef.current) {
+      // Mock fallback when Vapi isn't configured.
+      await new Promise((r) => setTimeout(r, 1400));
       setVoiceActive(false);
-      setMode("chat");
+      setVoiceFlowActive(false);
+      voiceFlowActiveRef.current = false;
+      const mock: FnolData = {
+        safety: "Yes",
+        mobile: "nine eight seven six five four three two one zero",
+        location: "Bellandur, Bangalore",
+        description: "Minor rear-end collision at the signal.",
+        injuries: "No",
+      };
+      voiceAnswersRef.current = mock;
+      setVoiceAnswers(mock);
+      setEditableVoice(mock);
+      showVoiceReviewRef.current = true;
+      setShowVoiceReview(true);
+      return;
     }
+    setMutedSafe(false);
   }
 
   function stopVoice() {
-    try {
-      vapiRef.current?.stop();
-    } catch {}
+    // Pause listening; keep VAPI session warm (do not call vapi.stop()).
+    setMutedSafe(true);
     setVoiceActive(false);
+    setVoiceFlowActive(false);
+    voiceFlowActiveRef.current = false;
     setMode("chat");
   }
+
+  function cancelVoiceReview() {
+    // Re-record from beginning — keep session alive, unmute.
+    showVoiceReviewRef.current = false;
+    setShowVoiceReview(false);
+    voiceAnswersRef.current = EMPTY_DATA;
+    setVoiceAnswers(EMPTY_DATA);
+    setEditableVoice(EMPTY_DATA);
+    voiceStepIndexRef.current = 0;
+    setVoiceStepIndex(0);
+    setVoiceFlowActive(true);
+    voiceFlowActiveRef.current = true;
+    setVoiceActive(true);
+    setMutedSafe(false);
+  }
+
 
   function getISTTimestamp() {
     const now = new Date();
