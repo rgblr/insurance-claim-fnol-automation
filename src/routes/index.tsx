@@ -153,7 +153,22 @@ function FnolPage() {
   // Voice
   const [voiceActive, setVoiceActive] = useState(false);
   const vapiRef = useRef<any>(null);
+  const vapiReadyRef = useRef(false);
   const [pendingTranscript, setPendingTranscript] = useState<string | null>(null);
+  // Continuous voice-flow state
+  const [voiceFlowActive, setVoiceFlowActive] = useState(false);
+  const voiceFlowActiveRef = useRef(false);
+  const [voiceStepIndex, setVoiceStepIndex] = useState(0);
+  const voiceStepIndexRef = useRef(0);
+  const [voiceAnswers, setVoiceAnswers] = useState<FnolData>(EMPTY_DATA);
+  const voiceAnswersRef = useRef<FnolData>(EMPTY_DATA);
+  const [showVoiceReview, setShowVoiceReview] = useState(false);
+  const showVoiceReviewRef = useRef(false);
+  const [editableVoice, setEditableVoice] = useState<FnolData>(EMPTY_DATA);
+
+  const setMutedSafe = (m: boolean) => {
+    try { vapiRef.current?.setMuted?.(m); } catch {}
+  };
 
   // Bootstrap: ask the first question.
   useEffect(() => {
@@ -343,61 +358,145 @@ function FnolPage() {
     await handleUserInput(t, "chat");
   }
 
-  // Voice via Vapi — used ONLY for speech→text. The transcript is staged
-  // for review then sent through handleUserInput, the same path as chat.
+  // ── Pre-initialize VAPI on mount, kept muted until user activates ──────────
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const { data } = await supabase.functions.invoke("fnol-vapi-config");
+        if (cancelled) return;
+        if (!data?.configured) return; // mock fallback handled in startVoice
+        const { default: Vapi } = await import("@vapi-ai/web");
+        if (cancelled) return;
+        const vapi = new Vapi(data.publicKey);
+        vapiRef.current = vapi;
+
+        vapi.on("call-start", () => {
+          vapiReadyRef.current = true;
+          setMutedSafe(true);
+        });
+        vapi.on("call-end", () => {
+          vapiReadyRef.current = false;
+          setVoiceActive(false);
+          setVoiceFlowActive(false);
+          voiceFlowActiveRef.current = false;
+        });
+        vapi.on("speech-start", () => {
+          // Assistant started speaking → mute mic to avoid feedback
+          if (voiceFlowActiveRef.current) setMutedSafe(true);
+        });
+        vapi.on("speech-end", () => {
+          // Assistant finished → auto-resume listening for the next answer
+          if (voiceFlowActiveRef.current && !showVoiceReviewRef.current) {
+            setMutedSafe(false);
+            setVoiceActive(true);
+          }
+        });
+        vapi.on("message", (m: any) => {
+          if (
+            m.type === "transcript" &&
+            m.transcriptType === "final" &&
+            m.role === "user" &&
+            voiceFlowActiveRef.current &&
+            !showVoiceReviewRef.current
+          ) {
+            const idx = voiceStepIndexRef.current;
+            const step = STEPS[idx];
+            if (!step) return;
+            const next = { ...voiceAnswersRef.current, [step.key]: m.transcript } as FnolData;
+            voiceAnswersRef.current = next;
+            setVoiceAnswers(next);
+            setMutedSafe(true);
+            setVoiceActive(false);
+            const nextIdx = idx + 1;
+            if (nextIdx >= STEPS.length) {
+              voiceStepIndexRef.current = nextIdx;
+              setVoiceStepIndex(nextIdx);
+              showVoiceReviewRef.current = true;
+              setShowVoiceReview(true);
+              setEditableVoice(next);
+            } else {
+              voiceStepIndexRef.current = nextIdx;
+              setVoiceStepIndex(nextIdx);
+            }
+          }
+        });
+        vapi.on("error", (e: any) => console.error(e));
+
+        await vapi.start(data.assistantId);
+        setMutedSafe(true);
+      } catch (e) {
+        console.error("VAPI pre-init failed", e);
+      }
+    })();
+    return () => {
+      cancelled = true;
+      try { vapiRef.current?.stop?.(); } catch {}
+      vapiRef.current = null;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Mic press: instant UI, unmute the pre-warmed session, start continuous flow.
   async function startVoice() {
     setMode("voice");
-    try {
-      const { data } = await supabase.functions.invoke("fnol-vapi-config");
-      if (!data?.configured) {
-        // Mock voice for demo when Vapi isn't configured.
-        setVoiceActive(true);
-        await new Promise((r) => setTimeout(r, 1400));
-        setVoiceActive(false);
-        const transcript =
-          getCurrentStep(fnolData)?.key === "mobile"
-            ? "9876543210"
-            : "There was a minor accident near Bellandur, Bangalore. No injuries.";
-        setPendingTranscript(transcript);
-        setMode("chat");
-        return;
-      }
-      const { default: Vapi } = await import("@vapi-ai/web");
-      const vapi = new Vapi(data.publicKey);
-      vapiRef.current = vapi;
-      vapi.on("call-start", () => setVoiceActive(true));
-      vapi.on("call-end", () => setVoiceActive(false));
-      vapi.on("message", (m: any) => {
-        if (m.type === "transcript" && m.transcriptType === "final" && m.role === "user") {
-          setPendingTranscript(m.transcript);
-          setMode("chat");
-          try {
-            vapi.stop();
-          } catch {}
-        }
-      });
-      vapi.on("error", (e: any) => {
-        console.error(e);
-        toast.error("Voice unavailable — try chat");
-        setVoiceActive(false);
-        setMode("chat");
-      });
-      await vapi.start(data.assistantId);
-    } catch (e) {
-      console.error(e);
-      toast.error("Voice unavailable — try chat");
+    setVoiceActive(true);
+    setVoiceFlowActive(true);
+    voiceFlowActiveRef.current = true;
+    voiceStepIndexRef.current = 0;
+    setVoiceStepIndex(0);
+    voiceAnswersRef.current = EMPTY_DATA;
+    setVoiceAnswers(EMPTY_DATA);
+    showVoiceReviewRef.current = false;
+    setShowVoiceReview(false);
+
+    if (!vapiRef.current) {
+      // Mock fallback when Vapi isn't configured.
+      await new Promise((r) => setTimeout(r, 1400));
       setVoiceActive(false);
-      setMode("chat");
+      setVoiceFlowActive(false);
+      voiceFlowActiveRef.current = false;
+      const mock: FnolData = {
+        safety: "Yes",
+        mobile: "nine eight seven six five four three two one zero",
+        location: "Bellandur, Bangalore",
+        description: "Minor rear-end collision at the signal.",
+        injuries: "No",
+      };
+      voiceAnswersRef.current = mock;
+      setVoiceAnswers(mock);
+      setEditableVoice(mock);
+      showVoiceReviewRef.current = true;
+      setShowVoiceReview(true);
+      return;
     }
+    setMutedSafe(false);
   }
 
   function stopVoice() {
-    try {
-      vapiRef.current?.stop();
-    } catch {}
+    // Pause listening; keep VAPI session warm (do not call vapi.stop()).
+    setMutedSafe(true);
     setVoiceActive(false);
+    setVoiceFlowActive(false);
+    voiceFlowActiveRef.current = false;
     setMode("chat");
   }
+
+  function cancelVoiceReview() {
+    // Re-record from beginning — keep session alive, unmute.
+    showVoiceReviewRef.current = false;
+    setShowVoiceReview(false);
+    voiceAnswersRef.current = EMPTY_DATA;
+    setVoiceAnswers(EMPTY_DATA);
+    setEditableVoice(EMPTY_DATA);
+    voiceStepIndexRef.current = 0;
+    setVoiceStepIndex(0);
+    setVoiceFlowActive(true);
+    voiceFlowActiveRef.current = true;
+    setVoiceActive(true);
+    setMutedSafe(false);
+  }
+
 
   function getISTTimestamp() {
     const now = new Date();
@@ -414,6 +513,42 @@ function FnolPage() {
     const ymd = `${istNow.getUTCFullYear()}${pad(istNow.getUTCMonth() + 1)}${pad(istNow.getUTCDate())}`;
     const hms = `${pad(istNow.getUTCHours())}${pad(istNow.getUTCMinutes())}${pad(istNow.getUTCSeconds())}`;
     return `CLM-${ymd}-${hms}`;
+  }
+
+  async function submitVoiceFNOL() {
+    setSubmitting(true);
+    const claimid = generateClaimId();
+    const payload = {
+      claimid,
+      timestamp: getISTTimestamp(),
+      safety: normalizeYesNo(editableVoice.safety),
+      mobile: normalizeMobileInput(editableVoice.mobile),
+      location: editableVoice.location,
+      description: editableVoice.description,
+      injuries: normalizeYesNo(editableVoice.injuries),
+    };
+    try {
+      const res = await fetch("https://hook.eu1.make.com/v6zxfe8jqgq115au1h26vtj9r6cwfmb1", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      // Stop VAPI session ONLY at successful submit.
+      try { vapiRef.current?.stop?.(); } catch {}
+      vapiRef.current = null;
+      voiceFlowActiveRef.current = false;
+      showVoiceReviewRef.current = false;
+      setShowVoiceReview(false);
+      setVoiceFlowActive(false);
+      setVoiceActive(false);
+      setSubmitted({ referenceId: claimid });
+    } catch (e) {
+      console.error(e);
+      toast.error("Submission failed. Please try again.");
+    } finally {
+      setSubmitting(false);
+    }
   }
 
   async function submitFNOL() {
@@ -652,18 +787,59 @@ function FnolPage() {
                   </div>
                 )}
 
+                {/* Continuous voice review (5-question edit screen) */}
+                {showVoiceReview && (
+                  <div className="border-t bg-accent/40 p-4 space-y-3">
+                    <div className="flex items-center gap-2 text-sm font-medium">
+                      <Mic className="h-4 w-4 text-primary" />
+                      Review your answers before submitting
+                    </div>
+                    <div className="space-y-2">
+                      {STEPS.map((s) => (
+                        <div key={s.key} className="space-y-1">
+                          <label className="text-[11px] uppercase tracking-wide text-muted-foreground">
+                            {FIELD_LABEL[s.key]}
+                          </label>
+                          <Input
+                            value={editableVoice[s.key]}
+                            onChange={(e) =>
+                              setEditableVoice((prev) => ({ ...prev, [s.key]: e.target.value }))
+                            }
+                            placeholder={INPUT_PLACEHOLDER[s.key]}
+                          />
+                        </div>
+                      ))}
+                    </div>
+                    <div className="flex gap-2 justify-end">
+                      <Button size="sm" variant="ghost" onClick={cancelVoiceReview} disabled={submitting}>
+                        Re-record
+                      </Button>
+                      <Button size="sm" onClick={submitVoiceFNOL} disabled={submitting}>
+                        {submitting ? (
+                          <>
+                            <Loader2 className="h-4 w-4 animate-spin mr-2" /> Submitting…
+                          </>
+                        ) : (
+                          "Submit"
+                        )}
+                      </Button>
+                    </div>
+                  </div>
+                )}
+
                 {/* Voice listening overlay-ish indicator */}
-                {voiceActive && (
+                {voiceActive && !showVoiceReview && (
                   <div className="border-t bg-primary/5 p-3 flex items-center justify-between">
                     <div className="flex items-center gap-2 text-sm text-primary">
                       <span className="h-2 w-2 rounded-full bg-primary animate-pulse" />
-                      Listening…
+                      Listening… {STEPS[voiceStepIndex] ? `(${STEP_LABEL[STEPS[voiceStepIndex].key]})` : ""}
                     </div>
                     <Button size="sm" variant="ghost" onClick={stopVoice}>
                       Stop
                     </Button>
                   </div>
                 )}
+
 
                 {/* Composer */}
                 {!showSummary && (
