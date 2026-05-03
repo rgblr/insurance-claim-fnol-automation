@@ -153,7 +153,22 @@ function FnolPage() {
   // Voice
   const [voiceActive, setVoiceActive] = useState(false);
   const vapiRef = useRef<any>(null);
+  const vapiReadyRef = useRef(false);
   const [pendingTranscript, setPendingTranscript] = useState<string | null>(null);
+  // Continuous voice-flow state
+  const [voiceFlowActive, setVoiceFlowActive] = useState(false);
+  const voiceFlowActiveRef = useRef(false);
+  const [voiceStepIndex, setVoiceStepIndex] = useState(0);
+  const voiceStepIndexRef = useRef(0);
+  const [voiceAnswers, setVoiceAnswers] = useState<FnolData>(EMPTY_DATA);
+  const voiceAnswersRef = useRef<FnolData>(EMPTY_DATA);
+  const [showVoiceReview, setShowVoiceReview] = useState(false);
+  const showVoiceReviewRef = useRef(false);
+  const [editableVoice, setEditableVoice] = useState<FnolData>(EMPTY_DATA);
+
+  const setMutedSafe = (m: boolean) => {
+    try { vapiRef.current?.setMuted?.(m); } catch {}
+  };
 
   // Bootstrap: ask the first question.
   useEffect(() => {
