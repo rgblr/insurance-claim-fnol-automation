@@ -787,18 +787,59 @@ function FnolPage() {
                   </div>
                 )}
 
+                {/* Continuous voice review (5-question edit screen) */}
+                {showVoiceReview && (
+                  <div className="border-t bg-accent/40 p-4 space-y-3">
+                    <div className="flex items-center gap-2 text-sm font-medium">
+                      <Mic className="h-4 w-4 text-primary" />
+                      Review your answers before submitting
+                    </div>
+                    <div className="space-y-2">
+                      {STEPS.map((s) => (
+                        <div key={s.key} className="space-y-1">
+                          <label className="text-[11px] uppercase tracking-wide text-muted-foreground">
+                            {FIELD_LABEL[s.key]}
+                          </label>
+                          <Input
+                            value={editableVoice[s.key]}
+                            onChange={(e) =>
+                              setEditableVoice((prev) => ({ ...prev, [s.key]: e.target.value }))
+                            }
+                            placeholder={INPUT_PLACEHOLDER[s.key]}
+                          />
+                        </div>
+                      ))}
+                    </div>
+                    <div className="flex gap-2 justify-end">
+                      <Button size="sm" variant="ghost" onClick={cancelVoiceReview} disabled={submitting}>
+                        Re-record
+                      </Button>
+                      <Button size="sm" onClick={submitVoiceFNOL} disabled={submitting}>
+                        {submitting ? (
+                          <>
+                            <Loader2 className="h-4 w-4 animate-spin mr-2" /> Submitting…
+                          </>
+                        ) : (
+                          "Submit"
+                        )}
+                      </Button>
+                    </div>
+                  </div>
+                )}
+
                 {/* Voice listening overlay-ish indicator */}
-                {voiceActive && (
+                {voiceActive && !showVoiceReview && (
                   <div className="border-t bg-primary/5 p-3 flex items-center justify-between">
                     <div className="flex items-center gap-2 text-sm text-primary">
                       <span className="h-2 w-2 rounded-full bg-primary animate-pulse" />
-                      Listening…
+                      Listening… {STEPS[voiceStepIndex] ? `(${STEP_LABEL[STEPS[voiceStepIndex].key]})` : ""}
                     </div>
                     <Button size="sm" variant="ghost" onClick={stopVoice}>
                       Stop
                     </Button>
                   </div>
                 )}
+
 
                 {/* Composer */}
                 {!showSummary && (
