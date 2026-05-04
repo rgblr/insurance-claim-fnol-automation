@@ -29,14 +29,18 @@ export const Route = createRootRoute({
     meta: [
       { charSet: "utf-8" },
       { name: "viewport", content: "width=device-width, initial-scale=1" },
-      { title: "Lovable App" },
-      { name: "description", content: "Lovable Generated Project" },
+      { title: "Motor Claim FNOL App" },
+      { name: "description", content: "Captures FNOL for motor claims" },
       { name: "author", content: "Lovable" },
-      { property: "og:title", content: "Lovable App" },
-      { property: "og:description", content: "Lovable Generated Project" },
+      { property: "og:title", content: "Motor Claim FNOL App" },
+      { property: "og:description", content: "Captures FNOL for motor claims" },
       { property: "og:type", content: "website" },
       { name: "twitter:card", content: "summary" },
       { name: "twitter:site", content: "@Lovable" },
+      { name: "twitter:title", content: "Motor Claim FNOL App" },
+      { name: "twitter:description", content: "Captures FNOL for motor claims" },
+      { property: "og:image", content: "https://storage.googleapis.com/gpt-engineer-file-uploads/BCEQXgrhoQbSbWdsJrChIlzBWIA2/social-images/social-1777896909593-MotorClaimImage_Final.webp" },
+      { name: "twitter:image", content: "https://storage.googleapis.com/gpt-engineer-file-uploads/BCEQXgrhoQbSbWdsJrChIlzBWIA2/social-images/social-1777896909593-MotorClaimImage_Final.webp" },
     ],
     links: [
       {
