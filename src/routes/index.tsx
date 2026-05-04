@@ -99,14 +99,37 @@ function wordsToDigits(input: string): string {
 // Pull a 10-digit mobile number out of any free-form text (after normalising
 // spoken number words). Returns "" if none is found.
 function extractMobile(text: string): string {
-  const normalized = wordsToDigits(text);
-  // Look for any run of 10+ consecutive digits (allowing spaces between).
-  const compact = normalized.replace(/\s+/g, "");
-  const match = compact.match(/\d{10,}/);
-  if (match) return match[0].slice(-10);
-  // Fallback: total digit count is at least 10 → take the last 10.
-  const allDigits = compact.replace(/\D/g, "");
-  return allDigits.length >= 10 ? allDigits.slice(-10) : "";
+  const digits = normalizePhoneNumber(text);
+  return digits.length >= 10 ? digits.slice(-10) : "";
+}
+
+// Normalise any phone input (typed or spoken) into a pure digits-only string.
+// Handles word digits, "double X"/"triple X", spaces, hyphens, brackets, etc.
+export function normalizePhoneNumber(input: string): string {
+  if (!input) return "";
+  const wordMap: Record<string, string> = {
+    zero: "0", one: "1", two: "2", three: "3", four: "4",
+    five: "5", six: "6", seven: "7", eight: "8", nine: "9", oh: "0",
+  };
+  const digitWords = "zero|one|two|three|four|five|six|seven|eight|nine|oh";
+  let result = String(input).toLowerCase();
+  result = result.replace(
+    new RegExp(`double\\s+(${digitWords})`, "g"),
+    (_, d: string) => wordMap[d].repeat(2),
+  );
+  result = result.replace(
+    new RegExp(`triple\\s+(${digitWords})`, "g"),
+    (_, d: string) => wordMap[d].repeat(3),
+  );
+  result = result.replace(/double\s+(\d)/g, (_, d: string) => d.repeat(2));
+  result = result.replace(/triple\s+(\d)/g, (_, d: string) => d.repeat(3));
+  result = result.replace(
+    new RegExp(`\\b(${digitWords})\\b`, "g"),
+    (m: string) => wordMap[m],
+  );
+  result = result.replace(/[\s\-\(\)\.]/g, "");
+  result = result.replace(/\D/g, "");
+  return result;
 }
 
 // Normalise any mobile input (typed or spoken) into a digits-only string,
@@ -299,12 +322,15 @@ function FnolPage() {
       }
 
       if (currentStep.key === "mobile") {
-        const normalized = wordsToDigits(text);
-        const digits = normalized.replace(/\D/g, "").slice(-10);
+        const digits = normalizePhoneNumber(text);
         if (!/^\d{10}$/.test(digits)) {
           setMessages((m) => [
             ...m,
-            { role: "assistant", content: "That doesn't look like a valid 10-digit mobile number. Please try again." },
+            {
+              role: "assistant",
+              content:
+                "I could not catch a valid 10-digit number. Please say your mobile number digit by digit, for example: nine eight seven six five four three two one zero.",
+            },
           ]);
           setLoading(false);
           return;
