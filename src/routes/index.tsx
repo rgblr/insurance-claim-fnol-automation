@@ -99,14 +99,8 @@ function wordsToDigits(input: string): string {
 // Pull a 10-digit mobile number out of any free-form text (after normalising
 // spoken number words). Returns "" if none is found.
 function extractMobile(text: string): string {
-  const normalized = wordsToDigits(text);
-  // Look for any run of 10+ consecutive digits (allowing spaces between).
-  const compact = normalized.replace(/\s+/g, "");
-  const match = compact.match(/\d{10,}/);
-  if (match) return match[0].slice(-10);
-  // Fallback: total digit count is at least 10 → take the last 10.
-  const allDigits = compact.replace(/\D/g, "");
-  return allDigits.length >= 10 ? allDigits.slice(-10) : "";
+  const digits = normalizePhoneNumber(text);
+  return digits.length >= 10 ? digits.slice(-10) : "";
 }
 
 // Normalise any phone input (typed or spoken) into a pure digits-only string.
