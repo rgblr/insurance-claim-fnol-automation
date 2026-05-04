@@ -619,12 +619,28 @@ function FnolPage() {
   }
 
   function startOver() {
+    // Stop any active voice session and clear all claim data.
+    try {
+      if (vapiRef.current) {
+        detachVapiListeners(vapiRef.current);
+        vapiRef.current.stop?.();
+      }
+    } catch {}
+    vapiRef.current = null;
+    voiceFlowActiveRef.current = false;
+    setVoiceFlowActive(false);
+    setVoiceActive(false);
+    showVoiceReviewRef.current = false;
+    setShowVoiceReview(false);
+    setEditableVoice(EMPTY_DATA);
     setMessages([{ role: "assistant", content: STEPS[0].question }]);
     setFnolData(EMPTY_DATA);
+    fnolDataRef.current = EMPTY_DATA;
     setShowSummary(false);
     setSubmitted(null);
     setInput("");
     setLastError(null);
+    setPendingTranscript(null);
     setMode("chat");
   }
 
