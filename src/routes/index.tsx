@@ -109,6 +109,35 @@ function extractMobile(text: string): string {
   return allDigits.length >= 10 ? allDigits.slice(-10) : "";
 }
 
+// Normalise any phone input (typed or spoken) into a pure digits-only string.
+// Handles word digits, "double X"/"triple X", spaces, hyphens, brackets, etc.
+export function normalizePhoneNumber(input: string): string {
+  if (!input) return "";
+  const wordMap: Record<string, string> = {
+    zero: "0", one: "1", two: "2", three: "3", four: "4",
+    five: "5", six: "6", seven: "7", eight: "8", nine: "9", oh: "0",
+  };
+  const digitWords = "zero|one|two|three|four|five|six|seven|eight|nine|oh";
+  let result = String(input).toLowerCase();
+  result = result.replace(
+    new RegExp(`double\\s+(${digitWords})`, "g"),
+    (_, d: string) => wordMap[d].repeat(2),
+  );
+  result = result.replace(
+    new RegExp(`triple\\s+(${digitWords})`, "g"),
+    (_, d: string) => wordMap[d].repeat(3),
+  );
+  result = result.replace(/double\s+(\d)/g, (_, d: string) => d.repeat(2));
+  result = result.replace(/triple\s+(\d)/g, (_, d: string) => d.repeat(3));
+  result = result.replace(
+    new RegExp(`\\b(${digitWords})\\b`, "g"),
+    (m: string) => wordMap[m],
+  );
+  result = result.replace(/[\s\-\(\)\.]/g, "");
+  result = result.replace(/\D/g, "");
+  return result;
+}
+
 // Normalise any mobile input (typed or spoken) into a digits-only string,
 // preserving a leading "+" for country codes when present.
 export function normalizeMobileInput(text: string): string {
