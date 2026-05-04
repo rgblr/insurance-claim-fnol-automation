@@ -150,21 +150,22 @@ function FnolPage() {
   const [lastError, setLastError] = useState<null | { text: string; source: Source }>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
 
-  // Voice
+  // Voice — single source of truth: voice writes into the same fnolData/currentStep as chat.
   const [voiceActive, setVoiceActive] = useState(false);
   const vapiRef = useRef<any>(null);
-  const vapiReadyRef = useRef(false);
-  const [pendingTranscript, setPendingTranscript] = useState<string | null>(null);
-  // Continuous voice-flow state
-  const [voiceFlowActive, setVoiceFlowActive] = useState(false);
+  const vapiPublicKeyRef = useRef<string | null>(null);
+  const vapiAssistantIdRef = useRef<string | null>(null);
+  const VapiCtorRef = useRef<any>(null);
   const voiceFlowActiveRef = useRef(false);
-  const [voiceStepIndex, setVoiceStepIndex] = useState(0);
-  const voiceStepIndexRef = useRef(0);
-  const [voiceAnswers, setVoiceAnswers] = useState<FnolData>(EMPTY_DATA);
-  const voiceAnswersRef = useRef<FnolData>(EMPTY_DATA);
+  const [voiceFlowActive, setVoiceFlowActive] = useState(false);
+  const fnolDataRef = useRef<FnolData>(EMPTY_DATA);
   const [showVoiceReview, setShowVoiceReview] = useState(false);
   const showVoiceReviewRef = useRef(false);
   const [editableVoice, setEditableVoice] = useState<FnolData>(EMPTY_DATA);
+  const [pendingTranscript, setPendingTranscript] = useState<string | null>(null);
+
+  // Keep ref in sync so voice handlers see latest fnolData without stale closures.
+  useEffect(() => { fnolDataRef.current = fnolData; }, [fnolData]);
 
   const setMutedSafe = (m: boolean) => {
     try { vapiRef.current?.setMuted?.(m); } catch {}
@@ -358,144 +359,170 @@ function FnolPage() {
     await handleUserInput(t, "chat");
   }
 
-  // ── Pre-initialize VAPI on mount, kept muted until user activates ──────────
+  // ── VAPI lifecycle ────────────────────────────────────────────────────────
+  // We do NOT auto-start voice on page load. We only lazy-fetch the config and
+  // dynamically import the SDK; the actual `vapi.start()` happens on user click.
+  // The instance is held in a ref so re-renders never recreate it.
   useEffect(() => {
     let cancelled = false;
     (async () => {
       try {
         const { data } = await supabase.functions.invoke("fnol-vapi-config");
-        if (cancelled) return;
-        if (!data?.configured) return; // mock fallback handled in startVoice
+        if (cancelled || !data?.configured) return;
         const { default: Vapi } = await import("@vapi-ai/web");
         if (cancelled) return;
-        const vapi = new Vapi(data.publicKey);
-        vapiRef.current = vapi;
-
-        vapi.on("call-start", () => {
-          vapiReadyRef.current = true;
-          setMutedSafe(true);
-        });
-        vapi.on("call-end", () => {
-          vapiReadyRef.current = false;
-          setVoiceActive(false);
-          setVoiceFlowActive(false);
-          voiceFlowActiveRef.current = false;
-        });
-        vapi.on("speech-start", () => {
-          // Assistant started speaking → mute mic to avoid feedback
-          if (voiceFlowActiveRef.current) setMutedSafe(true);
-        });
-        vapi.on("speech-end", () => {
-          // Assistant finished → auto-resume listening for the next answer
-          if (voiceFlowActiveRef.current && !showVoiceReviewRef.current) {
-            setMutedSafe(false);
-            setVoiceActive(true);
-          }
-        });
-        vapi.on("message", (m: any) => {
-          if (
-            m.type === "transcript" &&
-            m.transcriptType === "final" &&
-            m.role === "user" &&
-            voiceFlowActiveRef.current &&
-            !showVoiceReviewRef.current
-          ) {
-            const idx = voiceStepIndexRef.current;
-            const step = STEPS[idx];
-            if (!step) return;
-            const next = { ...voiceAnswersRef.current, [step.key]: m.transcript } as FnolData;
-            voiceAnswersRef.current = next;
-            setVoiceAnswers(next);
-            setMutedSafe(true);
-            setVoiceActive(false);
-            const nextIdx = idx + 1;
-            if (nextIdx >= STEPS.length) {
-              voiceStepIndexRef.current = nextIdx;
-              setVoiceStepIndex(nextIdx);
-              showVoiceReviewRef.current = true;
-              setShowVoiceReview(true);
-              setEditableVoice(next);
-            } else {
-              voiceStepIndexRef.current = nextIdx;
-              setVoiceStepIndex(nextIdx);
-            }
-          }
-        });
-        vapi.on("error", (e: any) => console.error(e));
-
-        await vapi.start(data.assistantId);
-        setMutedSafe(true);
+        VapiCtorRef.current = Vapi;
+        vapiPublicKeyRef.current = data.publicKey;
+        vapiAssistantIdRef.current = data.assistantId;
       } catch (e) {
-        console.error("VAPI pre-init failed", e);
+        console.error("VAPI config load failed", e);
       }
     })();
     return () => {
       cancelled = true;
+      // Always clean up an active session on unmount / refresh / nav-away.
       try { vapiRef.current?.stop?.(); } catch {}
       vapiRef.current = null;
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Mic press: instant UI, unmute the pre-warmed session, start continuous flow.
-  async function startVoice() {
-    setMode("voice");
-    setVoiceActive(true);
-    setVoiceFlowActive(true);
-    voiceFlowActiveRef.current = true;
-    voiceStepIndexRef.current = 0;
-    setVoiceStepIndex(0);
-    voiceAnswersRef.current = EMPTY_DATA;
-    setVoiceAnswers(EMPTY_DATA);
-    showVoiceReviewRef.current = false;
-    setShowVoiceReview(false);
+  // Also stop the session on tab close / refresh.
+  useEffect(() => {
+    const handler = () => {
+      try { vapiRef.current?.stop?.(); } catch {}
+    };
+    window.addEventListener("beforeunload", handler);
+    return () => window.removeEventListener("beforeunload", handler);
+  }, []);
 
-    if (!vapiRef.current) {
-      // Mock fallback when Vapi isn't configured.
-      await new Promise((r) => setTimeout(r, 1400));
+  function detachVapiListeners(vapi: any) {
+    if (!vapi) return;
+    try {
+      ["call-start", "call-end", "speech-start", "speech-end", "message", "error"].forEach((evt) =>
+        vapi.removeAllListeners?.(evt),
+      );
+    } catch {}
+  }
+
+  function attachVapiListeners(vapi: any) {
+    vapi.on("call-start", () => {
+      setVoiceActive(true);
+    });
+    vapi.on("call-end", () => {
       setVoiceActive(false);
       setVoiceFlowActive(false);
       voiceFlowActiveRef.current = false;
-      const mock: FnolData = {
-        safety: "Yes",
-        mobile: "nine eight seven six five four three two one zero",
-        location: "Bellandur, Bangalore",
-        description: "Minor rear-end collision at the signal.",
-        injuries: "No",
-      };
-      voiceAnswersRef.current = mock;
-      setVoiceAnswers(mock);
-      setEditableVoice(mock);
-      showVoiceReviewRef.current = true;
-      setShowVoiceReview(true);
+    });
+    vapi.on("speech-start", () => {
+      // Assistant talking → reflect in UI; mic gating handled by VAPI itself.
+    });
+    vapi.on("speech-end", () => {
+      // Assistant finished — keep listening.
+    });
+    vapi.on("error", (e: any) => {
+      console.error("VAPI error", e);
+    });
+    vapi.on("message", (m: any) => {
+      if (
+        m?.type === "transcript" &&
+        m?.role === "user" &&
+        voiceFlowActiveRef.current &&
+        !showVoiceReviewRef.current
+      ) {
+        // Capture both partial and final, but only ADVANCE on final.
+        if (m.transcriptType !== "final") return;
+        const text = String(m.transcript ?? "").trim();
+        if (!text) return;
+        // Voice writes into the SAME fnolData/currentStep as chat.
+        handleUserInput(text, "voice");
+      }
+    });
+  }
+
+  // Mic press: explicit user action starts the session.
+  async function startVoice() {
+    setMode("voice");
+
+    // Mock fallback if VAPI not configured.
+    if (!VapiCtorRef.current || !vapiPublicKeyRef.current || !vapiAssistantIdRef.current) {
+      toast.error("Voice is not configured. Please use chat.");
+      setMode("chat");
       return;
     }
-    setMutedSafe(false);
+
+    // Always stop any prior session before starting a new one.
+    try {
+      if (vapiRef.current) {
+        detachVapiListeners(vapiRef.current);
+        await vapiRef.current.stop?.();
+      }
+    } catch {}
+    vapiRef.current = null;
+
+    const vapi = new VapiCtorRef.current(vapiPublicKeyRef.current);
+    vapiRef.current = vapi;
+
+    // Register ALL listeners BEFORE start().
+    attachVapiListeners(vapi);
+
+    voiceFlowActiveRef.current = true;
+    setVoiceFlowActive(true);
+    setVoiceActive(true);
+    showVoiceReviewRef.current = false;
+    setShowVoiceReview(false);
+
+    // Pass the current step context to VAPI so the assistant aligns with the screen.
+    const current = getCurrentStep(fnolDataRef.current);
+    const variableValues = {
+      currentStep: current ? STEP_LABEL[current.key] : "Summary",
+      currentQuestion: current ? current.question : "",
+    };
+
+    try {
+      await vapi.start(vapiAssistantIdRef.current, { variableValues });
+    } catch (e) {
+      console.error("VAPI start failed", e);
+      voiceFlowActiveRef.current = false;
+      setVoiceFlowActive(false);
+      setVoiceActive(false);
+      toast.error("Couldn't start voice. Please try again.");
+    }
   }
 
   function stopVoice() {
-    // Pause listening; keep VAPI session warm (do not call vapi.stop()).
-    setMutedSafe(true);
-    setVoiceActive(false);
-    setVoiceFlowActive(false);
     voiceFlowActiveRef.current = false;
+    setVoiceFlowActive(false);
+    setVoiceActive(false);
+    try {
+      if (vapiRef.current) {
+        detachVapiListeners(vapiRef.current);
+        vapiRef.current.stop?.();
+      }
+    } catch {}
+    vapiRef.current = null;
     setMode("chat");
   }
 
   function cancelVoiceReview() {
-    // Re-record from beginning — keep session alive, unmute.
     showVoiceReviewRef.current = false;
     setShowVoiceReview(false);
-    voiceAnswersRef.current = EMPTY_DATA;
-    setVoiceAnswers(EMPTY_DATA);
     setEditableVoice(EMPTY_DATA);
-    voiceStepIndexRef.current = 0;
-    setVoiceStepIndex(0);
-    setVoiceFlowActive(true);
-    voiceFlowActiveRef.current = true;
-    setVoiceActive(true);
-    setMutedSafe(false);
+    // Reset claim data and restart voice flow from Step 1.
+    setFnolData(EMPTY_DATA);
+    fnolDataRef.current = EMPTY_DATA;
+    setMessages([{ role: "assistant", content: STEPS[0].question }]);
+    startVoice();
   }
+
+  // When all required fields are filled while voice flow is active,
+  // surface the editable review screen.
+  useEffect(() => {
+    if (voiceFlowActive && !showVoiceReview && getCurrentStep(fnolData) === null) {
+      setEditableVoice(fnolData);
+      showVoiceReviewRef.current = true;
+      setShowVoiceReview(true);
+    }
+  }, [fnolData, voiceFlowActive, showVoiceReview]);
 
 
   function getISTTimestamp() {
@@ -534,8 +561,16 @@ function FnolPage() {
         body: JSON.stringify(payload),
       });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      // Stop VAPI session ONLY at successful submit.
-      try { vapiRef.current?.stop?.(); } catch {}
+      // Persist edited values back to the single source of truth.
+      setFnolData(editableVoice);
+      fnolDataRef.current = editableVoice;
+      // Stop VAPI session at successful submit.
+      try {
+        if (vapiRef.current) {
+          detachVapiListeners(vapiRef.current);
+          vapiRef.current.stop?.();
+        }
+      } catch {}
       vapiRef.current = null;
       voiceFlowActiveRef.current = false;
       showVoiceReviewRef.current = false;
@@ -584,31 +619,36 @@ function FnolPage() {
   }
 
   function startOver() {
+    // Stop any active voice session and clear all claim data.
+    try {
+      if (vapiRef.current) {
+        detachVapiListeners(vapiRef.current);
+        vapiRef.current.stop?.();
+      }
+    } catch {}
+    vapiRef.current = null;
+    voiceFlowActiveRef.current = false;
+    setVoiceFlowActive(false);
+    setVoiceActive(false);
+    showVoiceReviewRef.current = false;
+    setShowVoiceReview(false);
+    setEditableVoice(EMPTY_DATA);
     setMessages([{ role: "assistant", content: STEPS[0].question }]);
     setFnolData(EMPTY_DATA);
+    fnolDataRef.current = EMPTY_DATA;
     setShowSummary(false);
     setSubmitted(null);
     setInput("");
     setLastError(null);
+    setPendingTranscript(null);
     setMode("chat");
   }
 
-  const chatActiveStep = getCurrentStep(fnolData);
-  const chatActiveStepIndex = getStepIndex(chatActiveStep);
-  // In voice mode, derive step indicator from VAPI-driven voiceStepIndex.
-  const isVoice = mode === "voice";
-  const voiceIdxClamped = Math.min(voiceStepIndex, STEPS.length - 1);
-  const activeStep = isVoice ? STEPS[voiceIdxClamped] : chatActiveStep;
-  const activeStepIndex = isVoice ? voiceIdxClamped : chatActiveStepIndex;
-  const activeStepNumber =
-    isVoice
-      ? Math.min(voiceStepIndex + 1, STEPS.length)
-      : activeStepIndex >= 0
-        ? activeStepIndex + 1
-        : STEPS.length;
-  const progress = isVoice
-    ? Math.min(voiceStepIndex, STEPS.length)
-    : STEPS.filter((s) => fnolData[s.key]?.trim()).length;
+  // SINGLE source of truth — both chat & voice derive UI from fnolData.
+  const activeStep = getCurrentStep(fnolData);
+  const activeStepIndex = getStepIndex(activeStep);
+  const activeStepNumber = activeStepIndex >= 0 ? activeStepIndex + 1 : STEPS.length;
+  const progress = STEPS.filter((s) => fnolData[s.key]?.trim()).length;
   const progressPct = Math.round((progress / STEPS.length) * 100);
 
   return (
@@ -844,7 +884,7 @@ function FnolPage() {
                   <div className="border-t bg-primary/5 p-3 flex items-center justify-between">
                     <div className="flex items-center gap-2 text-sm text-primary">
                       <span className="h-2 w-2 rounded-full bg-primary animate-pulse" />
-                      Listening… {STEPS[voiceStepIndex] ? `(${STEP_LABEL[STEPS[voiceStepIndex].key]})` : ""}
+                      Listening… {activeStep ? `(${STEP_LABEL[activeStep.key]})` : ""}
                     </div>
                     <Button size="sm" variant="ghost" onClick={stopVoice}>
                       Stop
