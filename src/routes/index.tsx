@@ -322,12 +322,15 @@ function FnolPage() {
       }
 
       if (currentStep.key === "mobile") {
-        const normalized = wordsToDigits(text);
-        const digits = normalized.replace(/\D/g, "").slice(-10);
+        const digits = normalizePhoneNumber(text);
         if (!/^\d{10}$/.test(digits)) {
           setMessages((m) => [
             ...m,
-            { role: "assistant", content: "That doesn't look like a valid 10-digit mobile number. Please try again." },
+            {
+              role: "assistant",
+              content:
+                "I could not catch a valid 10-digit number. Please say your mobile number digit by digit, for example: nine eight seven six five four three two one zero.",
+            },
           ]);
           setLoading(false);
           return;
