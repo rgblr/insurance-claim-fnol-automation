@@ -561,8 +561,16 @@ function FnolPage() {
         body: JSON.stringify(payload),
       });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      // Stop VAPI session ONLY at successful submit.
-      try { vapiRef.current?.stop?.(); } catch {}
+      // Persist edited values back to the single source of truth.
+      setFnolData(editableVoice);
+      fnolDataRef.current = editableVoice;
+      // Stop VAPI session at successful submit.
+      try {
+        if (vapiRef.current) {
+          detachVapiListeners(vapiRef.current);
+          vapiRef.current.stop?.();
+        }
+      } catch {}
       vapiRef.current = null;
       voiceFlowActiveRef.current = false;
       showVoiceReviewRef.current = false;
