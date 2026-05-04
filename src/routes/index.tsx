@@ -860,7 +860,7 @@ function FnolPage() {
                   <div className="border-t bg-primary/5 p-3 flex items-center justify-between">
                     <div className="flex items-center gap-2 text-sm text-primary">
                       <span className="h-2 w-2 rounded-full bg-primary animate-pulse" />
-                      Listening… {STEPS[voiceStepIndex] ? `(${STEP_LABEL[STEPS[voiceStepIndex].key]})` : ""}
+                      Listening… {activeStep ? `(${STEP_LABEL[activeStep.key]})` : ""}
                     </div>
                     <Button size="sm" variant="ghost" onClick={stopVoice}>
                       Stop
