@@ -150,21 +150,22 @@ function FnolPage() {
   const [lastError, setLastError] = useState<null | { text: string; source: Source }>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
 
-  // Voice
+  // Voice — single source of truth: voice writes into the same fnolData/currentStep as chat.
   const [voiceActive, setVoiceActive] = useState(false);
   const vapiRef = useRef<any>(null);
-  const vapiReadyRef = useRef(false);
-  const [pendingTranscript, setPendingTranscript] = useState<string | null>(null);
-  // Continuous voice-flow state
-  const [voiceFlowActive, setVoiceFlowActive] = useState(false);
+  const vapiPublicKeyRef = useRef<string | null>(null);
+  const vapiAssistantIdRef = useRef<string | null>(null);
+  const VapiCtorRef = useRef<any>(null);
   const voiceFlowActiveRef = useRef(false);
-  const [voiceStepIndex, setVoiceStepIndex] = useState(0);
-  const voiceStepIndexRef = useRef(0);
-  const [voiceAnswers, setVoiceAnswers] = useState<FnolData>(EMPTY_DATA);
-  const voiceAnswersRef = useRef<FnolData>(EMPTY_DATA);
+  const [voiceFlowActive, setVoiceFlowActive] = useState(false);
+  const fnolDataRef = useRef<FnolData>(EMPTY_DATA);
   const [showVoiceReview, setShowVoiceReview] = useState(false);
   const showVoiceReviewRef = useRef(false);
   const [editableVoice, setEditableVoice] = useState<FnolData>(EMPTY_DATA);
+  const [pendingTranscript, setPendingTranscript] = useState<string | null>(null);
+
+  // Keep ref in sync so voice handlers see latest fnolData without stale closures.
+  useEffect(() => { fnolDataRef.current = fnolData; }, [fnolData]);
 
   const setMutedSafe = (m: boolean) => {
     try { vapiRef.current?.setMuted?.(m); } catch {}
