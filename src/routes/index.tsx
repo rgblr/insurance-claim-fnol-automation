@@ -375,6 +375,7 @@ function FnolPage() {
           return;
         }
         const digits = normalizePhoneNumber(text);
+        console.log("NORMALIZED MOBILE:", digits);
         // Must have AT LEAST 10 digits before taking last 10
         if (digits.length < 10) {
           setMessages((m) => [
