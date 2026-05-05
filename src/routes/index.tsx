@@ -277,7 +277,6 @@ function FnolPage() {
     const text = rawText.trim();
     if (!text || loading || submitting) return;
 
-    // PROCESS LOCK
     if (processingLockRef.current) {
       console.log("TRANSCRIPT IGNORED (processing lock)");
       return;
@@ -287,13 +286,12 @@ function FnolPage() {
 
     setLastError(null);
 
-    // Small processing delay to avoid early/partial voice capture.
     await new Promise((r) => setTimeout(r, 1000));
 
-    const currentStep = getCurrentStep(fnolData);
+    const currentData = fnolDataRef.current;
+    const currentStep = getCurrentStep(currentData);
 
-    // GUARD: never reset back to safety once it's already answered.
-    if ((fnolData.safety === "Yes" || fnolData.safety === "No") && currentStep?.key === "safety") {
+    if ((currentData.safety === "Yes" || currentData.safety === "No") && currentStep?.key === "safety") {
       console.log("STEP RESET BLOCKED: safety already answered");
       processingLockRef.current = false;
       voiceStateRef.current = voiceFlowActiveRef.current ? "listening" : "idle";
@@ -301,7 +299,7 @@ function FnolPage() {
     }
 
     console.log("STEP:", currentStep?.key);
-    console.log("DATA:", fnolData);
+    console.log("DATA:", currentData);
     console.log("INPUT:", text);
     console.log("STATE:", voiceStateRef.current);
     console.log("CURRENT STEP:", currentStep?.key);
@@ -312,10 +310,9 @@ function FnolPage() {
     try {
       console.log("STEP:", currentStep?.key, "INPUT:", text);
 
-      // ── CORRECTION INTENT ────────────────────────────────────────────────
       const correction = detectCorrection(text);
       if (correction) {
-        const merged: FnolData = { ...fnolData };
+        const merged: FnolData = { ...currentData };
         let ack = "Got it, I've updated your details.";
         let valid = true;
 
@@ -331,7 +328,10 @@ function FnolPage() {
         } else if (correction.field === "safety") {
           const s = normalizeSafety(correction.value);
           if (s) merged.safety = s;
-          else { valid = false; ack = "Please confirm — are you safe right now? Yes or No."; }
+          else {
+            valid = false;
+            ack = "Please confirm — are you safe right now? Yes or No.";
+          }
         } else if (correction.field === "injuries") {
           merged.injuries = normalizeYesNo(correction.value);
         } else {
@@ -344,7 +344,10 @@ function FnolPage() {
           }
         }
 
-        if (valid) setFnolData(merged);
+        if (valid) {
+          fnolDataRef.current = merged;
+          setFnolData(merged);
+        }
         const nextStep = getCurrentStep(merged);
         console.log("MERGED:", merged, "NEXT:", nextStep?.key);
         const followUp = nextStep ? getQuestion(nextStep.key) : "All set — please review and submit your claim.";
@@ -356,7 +359,6 @@ function FnolPage() {
         return;
       }
 
-      // ── SAFETY STEP — STRICT ─────────────────────────────────────────────
       if (currentStep?.key === "safety") {
         const s = normalizeSafety(text);
         if (!s) {
@@ -366,7 +368,8 @@ function FnolPage() {
           ]);
           return;
         }
-        const merged: FnolData = { ...fnolData, safety: s };
+        const merged: FnolData = { ...currentData, safety: s };
+        fnolDataRef.current = merged;
         setFnolData(merged);
         const nextStep = getCurrentStep(merged);
         console.log("MERGED:", merged, "NEXT:", nextStep?.key);
@@ -379,17 +382,14 @@ function FnolPage() {
         return;
       }
 
-      // ── MOBILE STEP — STRICT ─────────────────────────────────────────────
-              if (currentStep?.key === "mobile") {
-        // Protect existing valid mobile.
-        if (isMobileValid(fnolData.mobile)) {
-          const nextStep = getCurrentStep(fnolData);
+      if (currentStep?.key === "mobile") {
+        if (isMobileValid(currentData.mobile)) {
+          const nextStep = getCurrentStep(currentData);
           if (nextStep) setMessages((m) => [...m, { role: "assistant", content: getQuestion(nextStep.key) }]);
           return;
         }
         const digits = normalizePhoneNumber(text);
         console.log("NORMALIZED MOBILE:", digits);
-        // Must have AT LEAST 10 digits before taking last 10
         if (digits.length < 10) {
           setMessages((m) => [
             ...m,
@@ -413,7 +413,8 @@ function FnolPage() {
           ]);
           return;
         }
-        const merged: FnolData = { ...fnolData, mobile: ten };
+        const merged: FnolData = { ...currentData, mobile: ten };
+        fnolDataRef.current = merged;
         setFnolData(merged);
         const nextStep = getCurrentStep(merged);
         console.log("MERGED:", merged, "NEXT:", nextStep?.key);
@@ -426,7 +427,6 @@ function FnolPage() {
         return;
       }
 
-      // ── EXTRACT FOR OTHER STEPS ──────────────────────────────────────────
       const extractedRaw = await extract(text, currentStep?.key ?? "description");
       const allowedKeys: FieldKey[] = ["location", "description", "injuries"];
       const extracted: Partial<FnolData> = {};
@@ -438,7 +438,6 @@ function FnolPage() {
         });
       }
 
-      // Regex safety net.
       if (!extracted.location) {
         const match = text.match(/near ([a-zA-Z\s]+)/i);
         if (match) extracted.location = match[1].trim();
@@ -452,22 +451,20 @@ function FnolPage() {
         }
       }
 
-      // Merge — never overwrite existing valid values.
-      const merged: FnolData = { ...fnolData };
+      const merged: FnolData = { ...currentData };
       (Object.keys(extracted) as FieldKey[]).forEach((k) => {
         const val = extracted[k];
         if (val && !merged[k]?.trim()) merged[k] = val;
       });
 
-      // Fallback to raw text for current step if extractor missed.
       if (currentStep && !merged[currentStep.key]?.trim()) {
         merged[currentStep.key] = currentStep.key === "injuries" ? normalizeYesNo(text) : text;
       }
 
-      // Protect existing valid mobile / safety from being clobbered.
-      if (isMobileValid(fnolData.mobile)) merged.mobile = fnolData.mobile;
-      if (fnolData.safety === "Yes" || fnolData.safety === "No") merged.safety = fnolData.safety;
+      if (isMobileValid(currentData.mobile)) merged.mobile = currentData.mobile;
+      if (currentData.safety === "Yes" || currentData.safety === "No") merged.safety = currentData.safety;
 
+      fnolDataRef.current = merged;
       setFnolData(merged);
       const nextStep = getCurrentStep(merged);
       console.log("MERGED:", merged, "NEXT:", nextStep?.key);
