@@ -221,6 +221,10 @@ function FnolPage() {
   const [isAssistantSpeaking, setIsAssistantSpeaking] = useState(false);
   // new const - ref perplexity
   const lastSpeechEndRef = useRef<number>(0);
+  // Voice state machine + processing lock + dedup
+  const voiceStateRef = useRef<"idle" | "listening" | "processing" | "speaking">("idle");
+  const processingLockRef = useRef(false);
+  const lastProcessedTextRef = useRef<string>("");
 
   // Keep ref in sync so voice handlers see latest fnolData without stale closures.
   useEffect(() => { fnolDataRef.current = fnolData; }, [fnolData]);
