@@ -372,7 +372,7 @@ function FnolPage() {
       }
 
       // Fallback to raw text for current step if extractor missed.
-      if (currentStep && !merged[currentStep.key]?.trim() && currentStep.key !== "mobile") {
+      if (currentStep && !merged[currentStep.key]?.trim()) {
         merged[currentStep.key] = currentStep.key === "injuries" ? normalizeYesNo(text) : text;
       }
 
