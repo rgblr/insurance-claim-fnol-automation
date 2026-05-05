@@ -547,15 +547,19 @@ function attachVapiListeners(vapi: any) {
     voiceFlowActiveRef.current = false;
   });
   vapi.on("speech-start", () => {
+    console.log("ASSISTANT SPEAKING: START");
     isAssistantSpeakingRef.current = true;
     setIsAssistantSpeaking(true);
+    voiceStateRef.current = "speaking";
     setMutedSafe(true);
   });
   vapi.on("speech-end", () => {
+    console.log("ASSISTANT SPEAKING: END");
     lastSpeechEndRef.current = Date.now();
     setTimeout(() => {
       isAssistantSpeakingRef.current = false;
       setIsAssistantSpeaking(false);
+      voiceStateRef.current = "listening";
       setMutedSafe(false);
     }, 1800);
   });
@@ -566,10 +570,25 @@ function attachVapiListeners(vapi: any) {
     if (m?.type !== "transcript" || m?.role !== "user") return;
     if (m.transcriptType !== "final") return;
     if (!voiceFlowActiveRef.current || showVoiceReviewRef.current) return;
-    if (isAssistantSpeakingRef.current) return;
-    if (Date.now() - lastSpeechEndRef.current < 1800) return;
+    if (voiceStateRef.current === "speaking" || isAssistantSpeakingRef.current) {
+      console.log("TRANSCRIPT IGNORED (speaking)");
+      return;
+    }
+    if (Date.now() - lastSpeechEndRef.current < 1800) {
+      console.log("TRANSCRIPT IGNORED (speaking)");
+      return;
+    }
+    if (processingLockRef.current) {
+      console.log("TRANSCRIPT IGNORED (processing lock)");
+      return;
+    }
     const text = String(m.transcript ?? "").trim();
     if (!text) return;
+    if (text === lastProcessedTextRef.current) {
+      console.log("TRANSCRIPT IGNORED (duplicate)");
+      return;
+    }
+    lastProcessedTextRef.current = text;
     handleUserInput(text, "voice");
   });
 }
