@@ -62,7 +62,24 @@ const STEP_LABEL: Record<FieldKey, string> = {
 };
 
 function isMobileValid(v: string) {
-  return /^\d{10}$/.test(v.replace(/\D/g, ""));
+  return /^[6-9]\d{9}$/.test(v.replace(/\D/g, ""));
+}
+
+// Detect if user is trying to correct a previously entered field.
+// Returns the target field key + the corrected raw text (or null).
+function detectCorrection(text: string): { field: FieldKey; value: string } | null {
+  const lower = text.toLowerCase();
+  const hasIntent = /\b(change|update|correct|actually|not\s+\w+\s+but|instead|rather|sorry,?\s*(it'?s|its|i meant)|i meant)\b/.test(lower);
+  if (!hasIntent) return null;
+  // Identify target field by keyword
+  let field: FieldKey | null = null;
+  if (/\b(mobile|phone|number|contact)\b/.test(lower)) field = "mobile";
+  else if (/\b(location|address|place|where|landmark)\b/.test(lower)) field = "location";
+  else if (/\b(injur|hurt|wound)\b/.test(lower)) field = "injuries";
+  else if (/\b(description|happened|incident|accident\s+detail|what\s+happened)\b/.test(lower)) field = "description";
+  else if (/\b(safe|safety)\b/.test(lower)) field = "safety";
+  if (!field) return null;
+  return { field, value: text };
 }
 
 // Convert spoken number words to digits.
@@ -186,6 +203,8 @@ function FnolPage() {
   const showVoiceReviewRef = useRef(false);
   const [editableVoice, setEditableVoice] = useState<FnolData>(EMPTY_DATA);
   const [pendingTranscript, setPendingTranscript] = useState<string | null>(null);
+  const isAssistantSpeakingRef = useRef(false);
+  const [isAssistantSpeaking, setIsAssistantSpeaking] = useState(false);
 
   // Keep ref in sync so voice handlers see latest fnolData without stale closures.
   useEffect(() => { fnolDataRef.current = fnolData; }, [fnolData]);
@@ -240,13 +259,81 @@ function FnolPage() {
     setLastError(null);
 
     const currentStep = getCurrentStep(fnolData);
-    if (!currentStep && showSummary) return;
 
     setMessages((m) => [...m, { role: "user", content: text, source }]);
     setLoading(true);
 
     try {
-      // STEP 1: Extract structured data FIRST.
+      // ── CORRECTION INTENT ────────────────────────────────────────────────
+      // Allow user to update any previously entered field at any time.
+      const correction = detectCorrection(text);
+      if (correction) {
+        const merged: FnolData = { ...fnolData };
+        let ack = "Got it, I've updated your details.";
+        let valid = true;
+
+        if (correction.field === "mobile") {
+          const digits = normalizePhoneNumber(correction.value);
+          const ten = digits.slice(-10);
+          if (isMobileValid(ten)) {
+            merged.mobile = ten;
+          } else {
+            valid = false;
+            ack = "I couldn't catch a valid 10-digit Indian mobile number. Please say it digit by digit.";
+          }
+        } else if (correction.field === "injuries" || correction.field === "safety") {
+          merged[correction.field] = normalizeYesNo(correction.value);
+        } else {
+          // location / description — re-extract via LLM, fall back to raw.
+          try {
+            const ex = await extract(correction.value, correction.field);
+            const v = (ex as any)?.[correction.field];
+            merged[correction.field] = (v && String(v).trim()) || correction.value;
+          } catch {
+            merged[correction.field] = correction.value;
+          }
+        }
+
+        if (valid) setFnolData(merged);
+        const nextStep = getCurrentStep(merged);
+        const followUp = nextStep ? getQuestion(nextStep.key) : "All set — please review and submit your claim.";
+        setMessages((m) => [
+          ...m,
+          { role: "assistant", content: valid ? `${ack} ${followUp}` : ack },
+        ]);
+        if (valid && !nextStep) setShowSummary(true);
+        return;
+      }
+
+      // ── MOBILE STEP — STRICT ─────────────────────────────────────────────
+      if (currentStep?.key === "mobile") {
+        const digits = normalizePhoneNumber(text);
+        const ten = digits.slice(-10);
+        if (!isMobileValid(ten)) {
+          setMessages((m) => [
+            ...m,
+            {
+              role: "assistant",
+              content:
+                "I couldn't catch a valid 10-digit Indian mobile number. Please say it digit by digit, for example: nine eight seven six five four three two one zero.",
+            },
+          ]);
+          return; // Do NOT update state, do NOT advance.
+        }
+        const merged: FnolData = { ...fnolData, mobile: ten };
+        if (!merged.safety?.trim()) merged.safety = "—";
+        setFnolData(merged);
+        const nextStep = getCurrentStep(merged);
+        if (nextStep) {
+          setMessages((m) => [...m, { role: "assistant", content: getQuestion(nextStep.key) }]);
+        } else {
+          setMessages((m) => [...m, { role: "assistant", content: "Thanks — I have everything I need. Here's a quick summary." }]);
+          setShowSummary(true);
+        }
+        return;
+      }
+
+      // ── EXTRACT FOR OTHER STEPS ──────────────────────────────────────────
       const extractedRaw = await extract(text, currentStep?.key ?? "description");
       const allowedKeys: FieldKey[] = ["location", "description", "injuries"];
       const extracted: Partial<FnolData> = {};
@@ -272,84 +359,24 @@ function FnolPage() {
         }
       }
 
-      // Always try to pull a mobile number out of the utterance, regardless
-      // of which step we're on (e.g. "my number is nine eight seven...").
-      if (!extracted.mobile) {
-        const m = extractMobile(text);
-        if (m) extracted.mobile = m;
-      }
-
-      // Merge — never overwrite existing values.
+      // Merge — never overwrite existing valid values.
       const merged: FnolData = { ...fnolData };
       (Object.keys(extracted) as FieldKey[]).forEach((k) => {
         const val = extracted[k];
         if (val && !merged[k]?.trim()) merged[k] = val;
       });
 
-      // STEP 2: Detect meaningful input.
-      const consumed =
-        !!extracted.location || !!extracted.description || !!extracted.injuries || !!extracted.mobile;
-
-      // STEP 3: If meaningful → SKIP validation, just advance.
-      if (consumed) {
-        // Mark safety as skipped so it never re-asks.
-        if (!merged.safety?.trim()) merged.safety = "—";
-        if (merged.mobile) merged.mobile = merged.mobile.replace(/\D/g, "").slice(-10);
-        setFnolData(merged);
-        const nextStep = getCurrentStep(merged);
-        if (nextStep) {
-          setMessages((m) => [...m, { role: "assistant", content: getQuestion(nextStep.key) }]);
-        } else {
-          setMessages((m) => [
-            ...m,
-            { role: "assistant", content: "Thanks — I have everything I need. Here's a quick summary." },
-          ]);
-          setShowSummary(true);
-        }
-        return;
+      // Safety yes/no when on safety step.
+      if (currentStep?.key === "safety" && !merged.safety?.trim()) {
+        merged.safety = normalizeYesNo(text);
       }
 
-      // STEP 4: No extraction — validate against current step.
-      if (!currentStep) {
-        // Nothing required left; just go to summary.
-        setFnolData(merged);
-        setMessages((m) => [
-          ...m,
-          { role: "assistant", content: "Thanks — I have everything I need. Here's a quick summary." },
-        ]);
-        setShowSummary(true);
-        return;
+      // Fallback to raw text for current step if extractor missed.
+      if (currentStep && !merged[currentStep.key]?.trim()) {
+        merged[currentStep.key] = currentStep.key === "injuries" ? normalizeYesNo(text) : text;
       }
 
-      if (currentStep.key === "mobile") {
-        const digits = normalizePhoneNumber(text);
-        if (!/^\d{10}$/.test(digits)) {
-          setMessages((m) => [
-            ...m,
-            {
-              role: "assistant",
-              content:
-                "I could not catch a valid 10-digit number. Please say your mobile number digit by digit, for example: nine eight seven six five four three two one zero.",
-            },
-          ]);
-          setLoading(false);
-          return;
-        }
-        merged.mobile = digits;
-      } else {
-        // location / description fallback — accept raw text.
-        merged[currentStep.key] = text;
-      }
-
-      // Safety: if user typed yes/no while safety still empty AND nothing else captured, record it.
-      if (!merged.safety?.trim()) {
-        const isYesNo = /^(yes|y|no|n)$/i.test(text);
-        if (isYesNo && currentStep.key !== "mobile") {
-          merged.safety = /^y/i.test(text) ? "Yes" : "No";
-        } else {
-          merged.safety = "—";
-        }
-      }
+      if (!merged.safety?.trim()) merged.safety = "—";
 
       setFnolData(merged);
       const nextStep = getCurrentStep(merged);
@@ -440,28 +467,30 @@ function FnolPage() {
       voiceFlowActiveRef.current = false;
     });
     vapi.on("speech-start", () => {
-      // Assistant talking → reflect in UI; mic gating handled by VAPI itself.
+      // Assistant is speaking — gate mic to prevent self-capture / echo.
+      isAssistantSpeakingRef.current = true;
+      setIsAssistantSpeaking(true);
+      setMutedSafe(true);
     });
     vapi.on("speech-end", () => {
-      // Assistant finished — keep listening.
+      // Assistant done — resume listening.
+      isAssistantSpeakingRef.current = false;
+      setIsAssistantSpeaking(false);
+      setMutedSafe(false);
     });
     vapi.on("error", (e: any) => {
       console.error("VAPI error", e);
     });
     vapi.on("message", (m: any) => {
-      if (
-        m?.type === "transcript" &&
-        m?.role === "user" &&
-        voiceFlowActiveRef.current &&
-        !showVoiceReviewRef.current
-      ) {
-        // Capture both partial and final, but only ADVANCE on final.
-        if (m.transcriptType !== "final") return;
-        const text = String(m.transcript ?? "").trim();
-        if (!text) return;
-        // Voice writes into the SAME fnolData/currentStep as chat.
-        handleUserInput(text, "voice");
-      }
+      // Strict gating: only final user transcripts, while flow active, not in review,
+      // and never while the assistant itself is speaking.
+      if (m?.type !== "transcript" || m?.role !== "user") return;
+      if (m.transcriptType !== "final") return;
+      if (!voiceFlowActiveRef.current || showVoiceReviewRef.current) return;
+      if (isAssistantSpeakingRef.current) return;
+      const text = String(m.transcript ?? "").trim();
+      if (!text) return;
+      handleUserInput(text, "voice");
     });
   }
 
