@@ -11,4 +11,9 @@ export default defineConfig({
     viteReact(),
     tailwindcss(),
   ],
+  build: {
+    rollupOptions: {
+      input: './src/main.tsx',
+    },
+  },
 })
