@@ -221,6 +221,10 @@ function FnolPage() {
   const [isAssistantSpeaking, setIsAssistantSpeaking] = useState(false);
   // new const - ref perplexity
   const lastSpeechEndRef = useRef<number>(0);
+  // Voice state machine + processing lock + dedup
+  const voiceStateRef = useRef<"idle" | "listening" | "processing" | "speaking">("idle");
+  const processingLockRef = useRef(false);
+  const lastProcessedTextRef = useRef<string>("");
 
   // Keep ref in sync so voice handlers see latest fnolData without stale closures.
   useEffect(() => { fnolDataRef.current = fnolData; }, [fnolData]);
@@ -272,9 +276,22 @@ function FnolPage() {
   async function handleUserInput(rawText: string, source: Source = "chat") {
     const text = rawText.trim();
     if (!text || loading || submitting) return;
+
+    // PROCESS LOCK
+    if (processingLockRef.current) {
+      console.log("TRANSCRIPT IGNORED (processing lock)");
+      return;
+    }
+    processingLockRef.current = true;
+    voiceStateRef.current = "processing";
+
     setLastError(null);
 
     const currentStep = getCurrentStep(fnolData);
+
+    console.log("INPUT:", text);
+    console.log("STATE:", voiceStateRef.current);
+    console.log("CURRENT STEP:", currentStep?.key);
 
     setMessages((m) => [...m, { role: "user", content: text, source }]);
     setLoading(true);
@@ -358,6 +375,7 @@ function FnolPage() {
           return;
         }
         const digits = normalizePhoneNumber(text);
+        console.log("NORMALIZED MOBILE:", digits);
         // Must have AT LEAST 10 digits before taking last 10
         if (digits.length < 10) {
           setMessages((m) => [
@@ -455,6 +473,8 @@ function FnolPage() {
       setLastError({ text, source });
     } finally {
       setLoading(false);
+      processingLockRef.current = false;
+      voiceStateRef.current = voiceFlowActiveRef.current ? "listening" : "idle";
     }
   }
 
@@ -527,15 +547,19 @@ function attachVapiListeners(vapi: any) {
     voiceFlowActiveRef.current = false;
   });
   vapi.on("speech-start", () => {
+    console.log("ASSISTANT SPEAKING: START");
     isAssistantSpeakingRef.current = true;
     setIsAssistantSpeaking(true);
+    voiceStateRef.current = "speaking";
     setMutedSafe(true);
   });
   vapi.on("speech-end", () => {
+    console.log("ASSISTANT SPEAKING: END");
     lastSpeechEndRef.current = Date.now();
     setTimeout(() => {
       isAssistantSpeakingRef.current = false;
       setIsAssistantSpeaking(false);
+      voiceStateRef.current = "listening";
       setMutedSafe(false);
     }, 1800);
   });
@@ -546,10 +570,25 @@ function attachVapiListeners(vapi: any) {
     if (m?.type !== "transcript" || m?.role !== "user") return;
     if (m.transcriptType !== "final") return;
     if (!voiceFlowActiveRef.current || showVoiceReviewRef.current) return;
-    if (isAssistantSpeakingRef.current) return;
-    if (Date.now() - lastSpeechEndRef.current < 1800) return;
+    if (voiceStateRef.current === "speaking" || isAssistantSpeakingRef.current) {
+      console.log("TRANSCRIPT IGNORED (speaking)");
+      return;
+    }
+    if (Date.now() - lastSpeechEndRef.current < 1800) {
+      console.log("TRANSCRIPT IGNORED (speaking)");
+      return;
+    }
+    if (processingLockRef.current) {
+      console.log("TRANSCRIPT IGNORED (processing lock)");
+      return;
+    }
     const text = String(m.transcript ?? "").trim();
     if (!text) return;
+    if (text === lastProcessedTextRef.current) {
+      console.log("TRANSCRIPT IGNORED (duplicate)");
+      return;
+    }
+    lastProcessedTextRef.current = text;
     handleUserInput(text, "voice");
   });
 }
