@@ -1,19 +1,15 @@
-import { defineConfig } from "vite";
-import react from "@vitejs/plugin-react";
-import { TanStackRouterVite } from "@tanstack/router-plugin/vite";
-import path from "path";
+import { defineConfig } from '@tanstack/start/config'
+import tsConfigPaths from 'vite-tsconfig-paths'
 
 export default defineConfig({
-  plugins: [
-    TanStackRouterVite({ autoCodeSplitting: true }),
-    react(),
-  ],
-  resolve: {
-    alias: {
-      "@": path.resolve(__dirname, "./src"),
-    },
+  server: {
+    preset: 'netlify',
   },
-  build: {
-    outDir: "dist",
+  vite: {
+    plugins: [
+      tsConfigPaths({
+        projects: ['./tsconfig.json'],
+      }),
+    ],
   },
-});
+})
