@@ -165,6 +165,20 @@ export function normalizeMobileInput(text: string): string {
   return hasPlus ? `+${digits}` : digits;
 }
 
+// Normalise a safety response → "Yes" | "No" | null (unclear).
+export function normalizeSafety(text: string): "Yes" | "No" | null {
+  if (!text) return null;
+  const lower = text.toLowerCase().trim();
+  // Negative first (so "not safe" / "i am not safe" doesn't match the "safe" Yes pattern).
+  if (/\b(no|nope|nah|not\s+safe|unsafe|injured|hurt|bleeding|i\s*am\s*not\s*safe|i'?m\s*not\s*safe|negative)\b/.test(lower)) {
+    return "No";
+  }
+  if (/\b(yes|yeah|yep|yup|safe|i\s*am\s*safe|i'?m\s*safe|all\s*good|fine|okay|ok|affirmative|y)\b/.test(lower)) {
+    return "Yes";
+  }
+  return null;
+}
+
 // Normalise any affirmative/negative input (typed or spoken) → "Yes" | "No".
 export const normalizeYesNo = (text: string): "Yes" | "No" => {
   if (!text) return "No";
@@ -264,8 +278,9 @@ function FnolPage() {
     setLoading(true);
 
     try {
+      console.log("STEP:", currentStep?.key, "INPUT:", text);
+
       // ── CORRECTION INTENT ────────────────────────────────────────────────
-      // Allow user to update any previously entered field at any time.
       const correction = detectCorrection(text);
       if (correction) {
         const merged: FnolData = { ...fnolData };
@@ -281,10 +296,13 @@ function FnolPage() {
             valid = false;
             ack = "I couldn't catch a valid 10-digit Indian mobile number. Please say it digit by digit.";
           }
-        } else if (correction.field === "injuries" || correction.field === "safety") {
-          merged[correction.field] = normalizeYesNo(correction.value);
+        } else if (correction.field === "safety") {
+          const s = normalizeSafety(correction.value);
+          if (s) merged.safety = s;
+          else { valid = false; ack = "Please confirm — are you safe right now? Yes or No."; }
+        } else if (correction.field === "injuries") {
+          merged.injuries = normalizeYesNo(correction.value);
         } else {
-          // location / description — re-extract via LLM, fall back to raw.
           try {
             const ex = await extract(correction.value, correction.field);
             const v = (ex as any)?.[correction.field];
@@ -296,6 +314,7 @@ function FnolPage() {
 
         if (valid) setFnolData(merged);
         const nextStep = getCurrentStep(merged);
+        console.log("MERGED:", merged, "NEXT:", nextStep?.key);
         const followUp = nextStep ? getQuestion(nextStep.key) : "All set — please review and submit your claim.";
         setMessages((m) => [
           ...m,
@@ -305,8 +324,37 @@ function FnolPage() {
         return;
       }
 
+      // ── SAFETY STEP — STRICT ─────────────────────────────────────────────
+      if (currentStep?.key === "safety") {
+        const s = normalizeSafety(text);
+        if (!s) {
+          setMessages((m) => [
+            ...m,
+            { role: "assistant", content: "Please confirm — are you safe right now? Yes or No." },
+          ]);
+          return;
+        }
+        const merged: FnolData = { ...fnolData, safety: s };
+        setFnolData(merged);
+        const nextStep = getCurrentStep(merged);
+        console.log("MERGED:", merged, "NEXT:", nextStep?.key);
+        if (nextStep) {
+          setMessages((m) => [...m, { role: "assistant", content: getQuestion(nextStep.key) }]);
+        } else {
+          setMessages((m) => [...m, { role: "assistant", content: "Thanks — I have everything I need. Here's a quick summary." }]);
+          setShowSummary(true);
+        }
+        return;
+      }
+
       // ── MOBILE STEP — STRICT ─────────────────────────────────────────────
       if (currentStep?.key === "mobile") {
+        // Protect existing valid mobile.
+        if (isMobileValid(fnolData.mobile)) {
+          const nextStep = getCurrentStep(fnolData);
+          if (nextStep) setMessages((m) => [...m, { role: "assistant", content: getQuestion(nextStep.key) }]);
+          return;
+        }
         const digits = normalizePhoneNumber(text);
         const ten = digits.slice(-10);
         if (!isMobileValid(ten)) {
@@ -318,12 +366,12 @@ function FnolPage() {
                 "I couldn't catch a valid 10-digit Indian mobile number. Please say it digit by digit, for example: nine eight seven six five four three two one zero.",
             },
           ]);
-          return; // Do NOT update state, do NOT advance.
+          return;
         }
         const merged: FnolData = { ...fnolData, mobile: ten };
-        if (!merged.safety?.trim()) merged.safety = "—";
         setFnolData(merged);
         const nextStep = getCurrentStep(merged);
+        console.log("MERGED:", merged, "NEXT:", nextStep?.key);
         if (nextStep) {
           setMessages((m) => [...m, { role: "assistant", content: getQuestion(nextStep.key) }]);
         } else {
@@ -366,20 +414,18 @@ function FnolPage() {
         if (val && !merged[k]?.trim()) merged[k] = val;
       });
 
-      // Safety yes/no when on safety step.
-      if (currentStep?.key === "safety" && !merged.safety?.trim()) {
-        merged.safety = normalizeYesNo(text);
-      }
-
       // Fallback to raw text for current step if extractor missed.
       if (currentStep && !merged[currentStep.key]?.trim()) {
         merged[currentStep.key] = currentStep.key === "injuries" ? normalizeYesNo(text) : text;
       }
 
-      if (!merged.safety?.trim()) merged.safety = "—";
+      // Protect existing valid mobile / safety from being clobbered.
+      if (isMobileValid(fnolData.mobile)) merged.mobile = fnolData.mobile;
+      if (fnolData.safety === "Yes" || fnolData.safety === "No") merged.safety = fnolData.safety;
 
       setFnolData(merged);
       const nextStep = getCurrentStep(merged);
+      console.log("MERGED:", merged, "NEXT:", nextStep?.key);
       if (nextStep) {
         setMessages((m) => [...m, { role: "assistant", content: getQuestion(nextStep.key) }]);
       } else {
