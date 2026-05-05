@@ -165,6 +165,20 @@ export function normalizeMobileInput(text: string): string {
   return hasPlus ? `+${digits}` : digits;
 }
 
+// Normalise a safety response → "Yes" | "No" | null (unclear).
+export function normalizeSafety(text: string): "Yes" | "No" | null {
+  if (!text) return null;
+  const lower = text.toLowerCase().trim();
+  // Negative first (so "not safe" / "i am not safe" doesn't match the "safe" Yes pattern).
+  if (/\b(no|nope|nah|not\s+safe|unsafe|injured|hurt|bleeding|i\s*am\s*not\s*safe|i'?m\s*not\s*safe|negative)\b/.test(lower)) {
+    return "No";
+  }
+  if (/\b(yes|yeah|yep|yup|safe|i\s*am\s*safe|i'?m\s*safe|all\s*good|fine|okay|ok|affirmative|y)\b/.test(lower)) {
+    return "Yes";
+  }
+  return null;
+}
+
 // Normalise any affirmative/negative input (typed or spoken) → "Yes" | "No".
 export const normalizeYesNo = (text: string): "Yes" | "No" => {
   if (!text) return "No";
