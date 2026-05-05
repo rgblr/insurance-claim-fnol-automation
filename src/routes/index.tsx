@@ -467,28 +467,30 @@ function FnolPage() {
       voiceFlowActiveRef.current = false;
     });
     vapi.on("speech-start", () => {
-      // Assistant talking → reflect in UI; mic gating handled by VAPI itself.
+      // Assistant is speaking — gate mic to prevent self-capture / echo.
+      isAssistantSpeakingRef.current = true;
+      setIsAssistantSpeaking(true);
+      setMutedSafe(true);
     });
     vapi.on("speech-end", () => {
-      // Assistant finished — keep listening.
+      // Assistant done — resume listening.
+      isAssistantSpeakingRef.current = false;
+      setIsAssistantSpeaking(false);
+      setMutedSafe(false);
     });
     vapi.on("error", (e: any) => {
       console.error("VAPI error", e);
     });
     vapi.on("message", (m: any) => {
-      if (
-        m?.type === "transcript" &&
-        m?.role === "user" &&
-        voiceFlowActiveRef.current &&
-        !showVoiceReviewRef.current
-      ) {
-        // Capture both partial and final, but only ADVANCE on final.
-        if (m.transcriptType !== "final") return;
-        const text = String(m.transcript ?? "").trim();
-        if (!text) return;
-        // Voice writes into the SAME fnolData/currentStep as chat.
-        handleUserInput(text, "voice");
-      }
+      // Strict gating: only final user transcripts, while flow active, not in review,
+      // and never while the assistant itself is speaking.
+      if (m?.type !== "transcript" || m?.role !== "user") return;
+      if (m.transcriptType !== "final") return;
+      if (!voiceFlowActiveRef.current || showVoiceReviewRef.current) return;
+      if (isAssistantSpeakingRef.current) return;
+      const text = String(m.transcript ?? "").trim();
+      if (!text) return;
+      handleUserInput(text, "voice");
     });
   }
 
