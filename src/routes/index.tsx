@@ -62,7 +62,24 @@ const STEP_LABEL: Record<FieldKey, string> = {
 };
 
 function isMobileValid(v: string) {
-  return /^\d{10}$/.test(v.replace(/\D/g, ""));
+  return /^[6-9]\d{9}$/.test(v.replace(/\D/g, ""));
+}
+
+// Detect if user is trying to correct a previously entered field.
+// Returns the target field key + the corrected raw text (or null).
+function detectCorrection(text: string): { field: FieldKey; value: string } | null {
+  const lower = text.toLowerCase();
+  const hasIntent = /\b(change|update|correct|actually|not\s+\w+\s+but|instead|rather|sorry,?\s*(it'?s|its|i meant)|i meant)\b/.test(lower);
+  if (!hasIntent) return null;
+  // Identify target field by keyword
+  let field: FieldKey | null = null;
+  if (/\b(mobile|phone|number|contact)\b/.test(lower)) field = "mobile";
+  else if (/\b(location|address|place|where|landmark)\b/.test(lower)) field = "location";
+  else if (/\b(injur|hurt|wound)\b/.test(lower)) field = "injuries";
+  else if (/\b(description|happened|incident|accident\s+detail|what\s+happened)\b/.test(lower)) field = "description";
+  else if (/\b(safe|safety)\b/.test(lower)) field = "safety";
+  if (!field) return null;
+  return { field, value: text };
 }
 
 // Convert spoken number words to digits.
