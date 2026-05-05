@@ -348,7 +348,7 @@ function FnolPage() {
       }
 
       // ── MOBILE STEP — STRICT ─────────────────────────────────────────────
-      if (currentStep?.key === "mobile") {
+              if (currentStep?.key === "mobile") {
         // Protect existing valid mobile.
         if (isMobileValid(fnolData.mobile)) {
           const nextStep = getCurrentStep(fnolData);
@@ -356,6 +356,18 @@ function FnolPage() {
           return;
         }
         const digits = normalizePhoneNumber(text);
+        // Must have AT LEAST 10 digits before taking last 10
+        if (digits.length < 10) {
+          setMessages((m) => [
+            ...m,
+            {
+              role: "assistant",
+              content:
+                "I couldn't catch a valid 10-digit Indian mobile number. Please say all 10 digits clearly, for example: nine eight seven six five four three two one zero.",
+            },
+          ]);
+          return;
+        }
         const ten = digits.slice(-10);
         if (!isMobileValid(ten)) {
           setMessages((m) => [
@@ -363,7 +375,7 @@ function FnolPage() {
             {
               role: "assistant",
               content:
-                "I couldn't catch a valid 10-digit Indian mobile number. Please say it digit by digit, for example: nine eight seven six five four three two one zero.",
+                "I couldn't catch a valid 10-digit Indian mobile number. It must start with 6, 7, 8 or 9. Please say it digit by digit.",
             },
           ]);
           return;
@@ -528,8 +540,7 @@ function FnolPage() {
       console.error("VAPI error", e);
     });
     vapi.on("message", (m: any) => {
-      // Strict gating: only final user transcripts, while flow active, not in review,
-      // and never while the assistant itself is speaking.
+      // Only process final user transcripts
       if (m?.type !== "transcript" || m?.role !== "user") return;
       if (m.transcriptType !== "final") return;
       if (!voiceFlowActiveRef.current || showVoiceReviewRef.current) return;
@@ -537,7 +548,7 @@ function FnolPage() {
       const text = String(m.transcript ?? "").trim();
       if (!text) return;
       handleUserInput(text, "voice");
-    });
+  });
   }
 
   // Mic press: explicit user action starts the session.
