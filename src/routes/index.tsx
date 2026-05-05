@@ -278,13 +278,8 @@ function FnolPage() {
     setLoading(true);
 
     try {
-    const currentStep = getCurrentStep(fnolData);
-    console.log("STEP:", currentStep?.key, "INPUT:", text);
+      console.log("STEP:", currentStep?.key, "INPUT:", text);
 
-    setMessages((m) => [...m, { role: "user", content: text, source }]);
-    setLoading(true);
-
-    try {
       // ── CORRECTION INTENT ────────────────────────────────────────────────
       const correction = detectCorrection(text);
       if (correction) {
