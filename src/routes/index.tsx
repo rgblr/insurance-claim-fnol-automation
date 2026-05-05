@@ -517,51 +517,42 @@ function FnolPage() {
     } catch {}
   }
 
-  function attachVapiListeners(vapi: any) {
-    vapi.on("call-start", () => {
-      setVoiceActive(true);
-    });
-    vapi.on("call-end", () => {
-      setVoiceActive(false);
-      setVoiceFlowActive(false);
-      voiceFlowActiveRef.current = false;
-    });
-    vapi.on("speech-start", () => {
-      // Assistant is speaking — gate mic to prevent self-capture / echo.
-      isAssistantSpeakingRef.current = true;
-      setIsAssistantSpeaking(true);
-      setMutedSafe(true);
-    });
-    // Change ref perplexity, earlier chatgpt
-    vapi.on("speech-end", () => {
-     // Delay re-enabling mic by 1800ms to let audio tail clear
-    // and prevent assistant voice being captured as user input.
-      lastSpeechEndRef.current = Date.now();
-      setTimeout(() => {
-        isAssistantSpeakingRef.current = false;
-        setIsAssistantSpeaking(false);
-        setMutedSafe(false);
-      }, 1800);
-    });
-    
-    vapi.on("speech-end", () => {
-   
-    vapi.on("error", (e: any) => {
-      console.error("VAPI error", e);
-    });
-    // Change ref- perplexity
-      vapi.on("message", (m: any) => {
-      if (m?.type !== "transcript" || m?.role !== "user") return;
-      if (m.transcriptType !== "final") return;
-      if (!voiceFlowActiveRef.current || showVoiceReviewRef.current) return;
-      if (isAssistantSpeakingRef.current) return;
-      if (Date.now() - lastSpeechEndRef.current < 1800) return;  // ← ADD THIS LINE
-      const text = String(m.transcript ?? "").trim();
-      if (!text) return;
-      handleUserInput(text, "voice");
-    });
-  }
-
+function attachVapiListeners(vapi: any) {
+  vapi.on("call-start", () => {
+    setVoiceActive(true);
+  });
+  vapi.on("call-end", () => {
+    setVoiceActive(false);
+    setVoiceFlowActive(false);
+    voiceFlowActiveRef.current = false;
+  });
+  vapi.on("speech-start", () => {
+    isAssistantSpeakingRef.current = true;
+    setIsAssistantSpeaking(true);
+    setMutedSafe(true);
+  });
+  vapi.on("speech-end", () => {
+    lastSpeechEndRef.current = Date.now();
+    setTimeout(() => {
+      isAssistantSpeakingRef.current = false;
+      setIsAssistantSpeaking(false);
+      setMutedSafe(false);
+    }, 1800);
+  });
+  vapi.on("error", (e: any) => {
+    console.error("VAPI error", e);
+  });
+  vapi.on("message", (m: any) => {
+    if (m?.type !== "transcript" || m?.role !== "user") return;
+    if (m.transcriptType !== "final") return;
+    if (!voiceFlowActiveRef.current || showVoiceReviewRef.current) return;
+    if (isAssistantSpeakingRef.current) return;
+    if (Date.now() - lastSpeechEndRef.current < 1800) return;
+    const text = String(m.transcript ?? "").trim();
+    if (!text) return;
+    handleUserInput(text, "voice");
+  });
+}
   // Mic press: explicit user action starts the session.
   async function startVoice() {
     setMode("voice");
