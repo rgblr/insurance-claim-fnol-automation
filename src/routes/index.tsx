@@ -287,8 +287,21 @@ function FnolPage() {
 
     setLastError(null);
 
+    // Small processing delay to avoid early/partial voice capture.
+    await new Promise((r) => setTimeout(r, 1000));
+
     const currentStep = getCurrentStep(fnolData);
 
+    // GUARD: never reset back to safety once it's already answered.
+    if ((fnolData.safety === "Yes" || fnolData.safety === "No") && currentStep?.key === "safety") {
+      console.log("STEP RESET BLOCKED: safety already answered");
+      processingLockRef.current = false;
+      voiceStateRef.current = voiceFlowActiveRef.current ? "listening" : "idle";
+      return;
+    }
+
+    console.log("STEP:", currentStep?.key);
+    console.log("DATA:", fnolData);
     console.log("INPUT:", text);
     console.log("STATE:", voiceStateRef.current);
     console.log("CURRENT STEP:", currentStep?.key);
