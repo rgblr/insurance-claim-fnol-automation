@@ -219,6 +219,8 @@ function FnolPage() {
   const [pendingTranscript, setPendingTranscript] = useState<string | null>(null);
   const isAssistantSpeakingRef = useRef(false);
   const [isAssistantSpeaking, setIsAssistantSpeaking] = useState(false);
+  // new const - ref perplexity
+  const lastSpeechEndRef = useRef<number>(0);
 
   // Keep ref in sync so voice handlers see latest fnolData without stale closures.
   useEffect(() => { fnolDataRef.current = fnolData; }, [fnolData]);
@@ -530,25 +532,34 @@ function FnolPage() {
       setIsAssistantSpeaking(true);
       setMutedSafe(true);
     });
+    // Change ref perplexity, earlier chatgpt
     vapi.on("speech-end", () => {
-      // Assistant done — resume listening.
-      isAssistantSpeakingRef.current = false;
-      setIsAssistantSpeaking(false);
-      setMutedSafe(false);
+     // Delay re-enabling mic by 1800ms to let audio tail clear
+    // and prevent assistant voice being captured as user input.
+      lastSpeechEndRef.current = Date.now();
+      setTimeout(() => {
+        isAssistantSpeakingRef.current = false;
+        setIsAssistantSpeaking(false);
+        setMutedSafe(false);
+      }, 1800);
     });
+    
+    vapi.on("speech-end", () => {
+   
     vapi.on("error", (e: any) => {
       console.error("VAPI error", e);
     });
-    vapi.on("message", (m: any) => {
-      // Only process final user transcripts
+    // Change ref- perplexity
+      vapi.on("message", (m: any) => {
       if (m?.type !== "transcript" || m?.role !== "user") return;
       if (m.transcriptType !== "final") return;
       if (!voiceFlowActiveRef.current || showVoiceReviewRef.current) return;
       if (isAssistantSpeakingRef.current) return;
+      if (Date.now() - lastSpeechEndRef.current < 1800) return;  // ← ADD THIS LINE
       const text = String(m.transcript ?? "").trim();
       if (!text) return;
       handleUserInput(text, "voice");
-  });
+    });
   }
 
   // Mic press: explicit user action starts the session.
