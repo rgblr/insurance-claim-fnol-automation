@@ -203,6 +203,8 @@ function FnolPage() {
   const showVoiceReviewRef = useRef(false);
   const [editableVoice, setEditableVoice] = useState<FnolData>(EMPTY_DATA);
   const [pendingTranscript, setPendingTranscript] = useState<string | null>(null);
+  const isAssistantSpeakingRef = useRef(false);
+  const [isAssistantSpeaking, setIsAssistantSpeaking] = useState(false);
 
   // Keep ref in sync so voice handlers see latest fnolData without stale closures.
   useEffect(() => { fnolDataRef.current = fnolData; }, [fnolData]);
