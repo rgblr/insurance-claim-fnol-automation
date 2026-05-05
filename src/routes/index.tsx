@@ -276,9 +276,22 @@ function FnolPage() {
   async function handleUserInput(rawText: string, source: Source = "chat") {
     const text = rawText.trim();
     if (!text || loading || submitting) return;
+
+    // PROCESS LOCK
+    if (processingLockRef.current) {
+      console.log("TRANSCRIPT IGNORED (processing lock)");
+      return;
+    }
+    processingLockRef.current = true;
+    voiceStateRef.current = "processing";
+
     setLastError(null);
 
     const currentStep = getCurrentStep(fnolData);
+
+    console.log("INPUT:", text);
+    console.log("STATE:", voiceStateRef.current);
+    console.log("CURRENT STEP:", currentStep?.key);
 
     setMessages((m) => [...m, { role: "user", content: text, source }]);
     setLoading(true);
