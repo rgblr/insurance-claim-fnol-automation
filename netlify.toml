@@ -1,9 +1,0 @@
-[build]
-  command = "npm install @netlify/vite-plugin-tanstack-start && npm run build"
-  publish = "dist/client"
-
-[[redirects]]
-  from = "/*"
-  to = "/.netlify/functions/server"
-  status = 200
-  force = true
