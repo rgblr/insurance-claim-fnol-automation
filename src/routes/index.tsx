@@ -473,6 +473,8 @@ function FnolPage() {
       setLastError({ text, source });
     } finally {
       setLoading(false);
+      processingLockRef.current = false;
+      voiceStateRef.current = voiceFlowActiveRef.current ? "listening" : "idle";
     }
   }
 
